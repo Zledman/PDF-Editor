@@ -1,6 +1,8 @@
 import { useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 export default function LandingPage({ onFileSelect }) {
+  const { t } = useTranslation();
   const fileInputRef = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
 
@@ -9,7 +11,7 @@ export default function LandingPage({ onFileSelect }) {
     if (file && file.type === 'application/pdf') {
       onFileSelect(file);
     } else {
-      alert('Vänligen välj en PDF-fil');
+      alert(t('landingPage.selectPdfFile'));
     }
   };
 
@@ -31,7 +33,7 @@ export default function LandingPage({ onFileSelect }) {
     if (file && file.type === 'application/pdf') {
       onFileSelect(file);
     } else {
-      alert('Vänligen släpp en PDF-fil');
+      alert(t('landingPage.dropPdfFile'));
     }
   };
 
@@ -66,7 +68,7 @@ export default function LandingPage({ onFileSelect }) {
             backgroundClip: 'text'
           }}
         >
-          PDF Editor
+          {t('landingPage.title')}
         </h1>
         <p
           style={{
@@ -76,7 +78,7 @@ export default function LandingPage({ onFileSelect }) {
             maxWidth: '600px'
           }}
         >
-          Redigera dina PDF-filer med text, whiteout och patch-verktyg
+          {t('landingPage.subtitle')}
         </p>
       </div>
 
@@ -165,7 +167,7 @@ export default function LandingPage({ onFileSelect }) {
               color: '#fff'
             }}
           >
-            {isDragging ? 'Släpp PDF-filen här' : 'Ladda upp PDF'}
+            {t('landingPage.dragDrop')}
           </h2>
           
           <p
@@ -175,7 +177,7 @@ export default function LandingPage({ onFileSelect }) {
               margin: '0 0 30px 0'
             }}
           >
-            Klicka här eller dra och släpp din PDF-fil
+            {t('landingPage.orClick')}
           </p>
 
           <button
@@ -239,7 +241,7 @@ export default function LandingPage({ onFileSelect }) {
           },
           {
             icon: '🔧',
-            title: 'Patch',
+            title: 'Kopiera område',
             description: 'Kopiera och flytta delar av PDF:en'
           }
         ].map((feature, index) => (

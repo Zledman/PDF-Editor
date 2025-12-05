@@ -16,11 +16,14 @@ export default function WhiteoutBox({
   const rectPx = rectPtToPx(whiteoutBox.rect, zoom);
 
   const handleMouseDown = (e) => {
-    // Stoppa propagation endast om det inte är whiteout-verktyget som är aktivt
-    // (för att tillåta drag när verktyget är aktivt)
-    if (tool !== 'whiteout' || e.target.dataset.resizeHandle) {
-      e.stopPropagation();
+    // Stoppa propagation endast om whiteout-verktyget är aktivt
+    // När text-verktyget eller andra verktyg är aktiva, låt klick gå igenom
+    if (tool === 'whiteout') {
+      // Låt whiteout-verktyget hantera klick
+      return;
     }
+    // För alla andra verktyg (inklusive text), låt klick gå igenom
+    // (pointerEvents: 'none' borde redan hantera detta, men detta är en extra säkerhet)
   };
 
   // Visa ram endast när whiteout-verktyget är aktivt
@@ -53,9 +56,11 @@ export default function WhiteoutBox({
         border: borderStyle,
         cursor: isSelected && tool === 'whiteout' ? 'move' : 'default',
         boxSizing: 'border-box',
-        opacity: 0.9
+        opacity: 0.9,
+        zIndex: 2, // Whiteout boxes ska ligga under text boxes
+        pointerEvents: tool === 'whiteout' ? 'auto' : 'none' // Tillåt klick endast när whiteout-verktyget är aktivt, annars låt klick gå igenom till text boxes och andra element
       }}
-      onMouseDown={handleMouseDown}
+      onMouseDown={tool === 'whiteout' ? handleMouseDown : undefined}
     >
       {/* Resize handles */}
       {isSelected && handles.map((handle) => (

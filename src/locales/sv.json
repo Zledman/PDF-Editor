@@ -1,0 +1,77 @@
+{
+  "toolbar": {
+    "newPdf": "Ny PDF",
+    "addText": "Lägg till text",
+    "whiteout": "Whiteout",
+    "copyArea": "Kopiera område",
+    "selectArea": "(Välj område)",
+    "place": "(Placera)",
+    "pan": "Flytta",
+    "delete": "Ta bort",
+    "undo": "Ångra",
+    "redo": "Gör om",
+    "zoom": "Zoom",
+    "previous": "Föregående",
+    "next": "Nästa",
+    "page": "Sida",
+    "of": "av",
+    "exportPdf": "Exportera PDF",
+    "download": "Ladda ner",
+    "language": "Språk"
+  },
+  "textSidebar": {
+    "size": "Storlek",
+    "fontFamily": "Typsnitt",
+    "color": "Färg",
+    "selectColor": "Välj färg",
+    "style": "Stil",
+    "bold": "Fet",
+    "italic": "Kursiv",
+    "preview": "Förhandsvisning"
+  },
+  "colors": {
+    "black": "Svart",
+    "white": "Vit",
+    "red": "Röd",
+    "blue": "Blå",
+    "green": "Grön",
+    "yellow": "Gul",
+    "orange": "Orange",
+    "purple": "Lila",
+    "pink": "Rosa",
+    "gray": "Grå",
+    "darkBlue": "Mörkblå",
+    "darkGreen": "Mörkgrön"
+  },
+  "landingPage": {
+    "title": "PDF Editor",
+    "subtitle": "Redigera dina PDF-filer med text, whiteout och kopiera område-verktyg",
+    "selectPdfFile": "Vänligen välj en PDF-fil",
+    "dropPdfFile": "Vänligen släpp en PDF-fil",
+    "dragDrop": "Dra och släpp en PDF-fil här",
+    "orClick": "eller klicka för att välja"
+  },
+  "floatingControlBar": {
+    "page": "Sida",
+    "previousPage": "Föregående sida",
+    "nextPage": "Nästa sida",
+    "zoomIn": "Zooma in",
+    "zoomOut": "Zooma ut",
+    "panTool": "Flytta/Pan"
+  },
+  "tooltips": {
+    "undo": "Ångra (Ctrl+Z)",
+    "redo": "Gör om (Ctrl+Y)"
+  },
+  "errors": {
+    "exportFailed": "Kunde inte exportera PDF"
+  },
+  "downloadModal": {
+    "title": "Bra jobbat!",
+    "subtitle": "Välj ett filformat för att ladda ner din fil",
+    "filename": "Filnamn",
+    "cancel": "Avbryt",
+    "download": "Ladda ner"
+  }
+}
+

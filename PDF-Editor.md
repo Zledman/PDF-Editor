@@ -16,7 +16,7 @@ Bygg en PDF-redigerare som en modern webapp (React + Vite + pdf-lib + PDF.js) me
      - Diagnostik via `console.table` (overlay vs stored vs export).
    - `WhiteoutBox.jsx`: rita vita rektanglar som täcker text.
    - `PatchBox.jsx`: nytt verktyg ("klonings-whiteout").
-     - Knapp i toolbaren aktiverar kopiera område-läge.
+     - Knapp i toolbaren aktiverar patch-läge.
      - Användaren markerar ett område (sourceRect).
      - Rendera området till canvas via PDF.js → base64 imageData.
      - Placera imageData på ny plats (targetRect).
@@ -26,7 +26,7 @@ Bygg en PDF-redigerare som en modern webapp (React + Vite + pdf-lib + PDF.js) me
    - `pdfExport.js` (frontend) och `pdfService.js` (backend).
    - Text: `drawText` med pt-värden (x, baseline, fontSizePt).
    - Whiteout: `drawRectangle` med pt-värden.
-   - Kopiera område: `drawImage` med imageData och targetRectPt.
+   - Patch: `drawImage` med imageData och targetRectPt.
    - Samma font som viewer bäddas in (t.ex. Helvetica eller TTF).
 
 4. **Projektstruktur**
@@ -38,7 +38,7 @@ Bygg en PDF-redigerare som en modern webapp (React + Vite + pdf-lib + PDF.js) me
 - Stabil pt‑först‑modell: viewer och export alltid synkade.
 - Text kan förminskas ned till `MIN_FONT_PT`.
 - Whiteout fungerar symmetriskt.
-- Kopiera område-verktyget låter användaren kopiera en bit av PDF och placera den på annan plats.
+- Patch‑verktyg låter användaren kopiera en bit av PDF och placera den på annan plats.
 - Exporten ger pixelperfekt resultat utan px/pt‑mismatch.
 
 ## Installation och körning
@@ -60,8 +60,8 @@ npm run dev
 5. Använd verktygen:
    - **Text**: Klicka på PDF:en för att skapa en textbox och börja skriva direkt
    - **Whiteout**: Klicka och dra för att skapa en vit rektangel som täcker text
-   - **Kopiera område**: 
-     - Klicka på "Kopiera område"-knappen
+   - **Patch**: 
+     - Klicka på "Patch"-knappen
      - Markera ett område på PDF:en (source)
      - Klicka på ny plats för att placera kopian (target)
    - **Exportera PDF**: Klicka på "Exportera PDF" för att ladda ner den redigerade PDF:en

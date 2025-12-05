@@ -1,4 +1,5 @@
 import { PDFDocument, rgb } from 'pdf-lib';
+import * as pdfjsLib from 'pdfjs-dist';
 import { LINE_HEIGHT_FACTOR } from '../utils/textLayoutConstants';
 
 /**
@@ -27,7 +28,35 @@ export async function exportPDF(pdfData, textBoxes = [], whiteoutBoxes = [], pat
     }
   }
   
-  const pdfDoc = await PDFDocument.load(pdfDataCopy);
+  // Försök först att ladda med pdf-lib direkt
+  let pdfDoc;
+  let useImageBasedExport = false;
+  try {
+    // Försök först med ignoreEncryption och minimal parsing för att undvika korrupta objekt
+    pdfDoc = await PDFDocument.load(pdfDataCopy, { 
+      ignoreEncryption: true,
+      updateMetadata: false,
+      parseSpeed: 0 // Snabbast parsing, minst validering
+    });
+    
+    // Testa om vi kan läsa sidor
+    try {
+      pdfDoc.getPages();
+    } catch (error) {
+      // Om vi inte kan läsa sidor, använd bildbaserad export
+      useImageBasedExport = true;
+    }
+  } catch (error) {
+    // Om laddning misslyckas, använd bildbaserad export
+    useImageBasedExport = true;
+  }
+  
+  // Om pdf-lib inte kan hantera PDF:en, använd bildbaserad export med PDF.js
+  if (useImageBasedExport) {
+    return await exportPDFAsImages(pdfDataCopy, textBoxes, whiteoutBoxes, patchBoxes);
+  }
+  
+  // Hämta sidor
   const pages = pdfDoc.getPages();
 
   // Processa varje sida
@@ -154,9 +183,10 @@ export async function exportPDF(pdfData, textBoxes = [], whiteoutBoxes = [], pat
 
       // Beräkna baseline-y (PDF har y=0 längst ner, rect.y är från toppen)
       // rect.y är från toppen av PDF-sidan, så vi inverterar: height - rect.y
-      // Sedan subtraherar vi rect.height för att få till toppen av rektangeln
-      // Och lägger till en liten offset för baseline (ca 80% av fontstorleken)
-      const baselineY = height - rect.y - rect.height + (fontSizePt * 0.8);
+      // Texten börjar från toppen av rektangeln (rect.y) i redigering
+      // drawText använder baseline, som är ungefär 80-85% av fontstorleken från toppen av texten
+      // För att matcha redigering: baseline ska vara på rect.y + ungefär 85% av fontstorleken
+      const baselineY = height - rect.y - (fontSizePt * 0.85);
 
       page.drawText(text, {
         x: rect.x,
@@ -169,6 +199,148 @@ export async function exportPDF(pdfData, textBoxes = [], whiteoutBoxes = [], pat
   }
 
   return await pdfDoc.save();
+}
+
+/**
+ * Exporterar PDF genom att rendera varje sida som bild (för korrupta PDF:er)
+ */
+async function exportPDFAsImages(pdfData, textBoxes = [], whiteoutBoxes = [], patchBoxes = []) {
+  // Ladda PDF med PDF.js (kan hantera korrupta PDF:er bättre)
+  const loadingTask = pdfjsLib.getDocument({ data: pdfData, ignoreEncryption: true });
+  const pdfDocJs = await loadingTask.promise;
+  const numPages = pdfDocJs.numPages;
+  
+  // Skapa ny PDF med pdf-lib
+  const newPdfDoc = await PDFDocument.create();
+  
+  // Processa varje sida
+  for (let pageIndex = 0; pageIndex < numPages; pageIndex++) {
+    const page = await pdfDocJs.getPage(pageIndex + 1);
+    const viewport = page.getViewport({ scale: 2.0 }); // Högre upplösning för bättre kvalitet
+    
+    // Skapa canvas för att rendera PDF-sidan
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const context = canvas.getContext('2d');
+    
+    // Rendera PDF-sidan till canvas
+    await page.render({
+      canvasContext: context,
+      viewport: viewport
+    }).promise;
+    
+    // Konvertera canvas till PNG
+    const imageData = canvas.toDataURL('image/png');
+    const base64String = imageData.split(',')[1];
+    const binaryString = atob(base64String);
+    const imageBytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      imageBytes[i] = binaryString.charCodeAt(i);
+    }
+    
+    // Bädda in bilden i ny PDF
+    const image = await newPdfDoc.embedPng(imageBytes);
+    const { width, height } = page.getViewport({ scale: 1.0 });
+    const pdfPage = newPdfDoc.addPage([width, height]);
+    
+    // Rita PDF-sidan som bakgrund
+    pdfPage.drawImage(image, {
+      x: 0,
+      y: 0,
+      width: width,
+      height: height
+    });
+    
+    // Filtrera element för denna sida
+    const pageTextBoxes = textBoxes.filter(tb => tb.pageIndex === undefined || tb.pageIndex === pageIndex);
+    const pageWhiteoutBoxes = whiteoutBoxes.filter(wb => wb.pageIndex === undefined || wb.pageIndex === pageIndex);
+    const pagePatchBoxes = patchBoxes.filter(pb => pb.pageIndex === undefined || pb.pageIndex === pageIndex);
+    
+    // Rita whiteout
+    for (const whiteout of pageWhiteoutBoxes) {
+      const rect = whiteout.rect;
+      pdfPage.drawRectangle({
+        x: rect.x,
+        y: height - rect.y - rect.height,
+        width: rect.width,
+        height: rect.height,
+        color: rgb(1, 1, 1),
+        opacity: 1.0
+      });
+    }
+    
+    // Rita patches
+    for (const patch of pagePatchBoxes) {
+      if (patch.imageData && patch.targetRect) {
+        try {
+          let imageBytes;
+          if (patch.imageData.startsWith('data:')) {
+            const base64String = patch.imageData.split(',')[1];
+            if (!base64String) continue;
+            const binaryString = atob(base64String);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+            imageBytes = bytes;
+          } else {
+            imageBytes = await fetch(patch.imageData).then(res => res.arrayBuffer());
+          }
+          
+          let patchImage;
+          try {
+            patchImage = await newPdfDoc.embedPng(imageBytes);
+          } catch (pngError) {
+            try {
+              patchImage = await newPdfDoc.embedJpg(imageBytes);
+            } catch (jpgError) {
+              continue;
+            }
+          }
+          
+          const targetRect = patch.targetRect;
+          pdfPage.drawImage(patchImage, {
+            x: targetRect.x,
+            y: height - targetRect.y - targetRect.height,
+            width: targetRect.width,
+            height: targetRect.height
+          });
+        } catch (error) {
+          console.error('Fel vid export av patch:', error);
+        }
+      }
+    }
+    
+    // Rita text
+    for (const textBox of pageTextBoxes) {
+      const rect = textBox.rect;
+      const fontSizePt = textBox.fontSizePt || 12;
+      const fontFamily = textBox.fontFamily || 'Helvetica';
+      const text = textBox.text || '';
+      const color = textBox.color || '#000000';
+      
+      let font;
+      try {
+        font = await newPdfDoc.embedFont('Helvetica');
+      } catch (error) {
+        font = await newPdfDoc.embedFont('Helvetica');
+      }
+      
+      const rgbColor = hexToRgb(color);
+      const baselineY = height - rect.y - (fontSizePt * 0.85);
+      
+      pdfPage.drawText(text, {
+        x: rect.x,
+        y: baselineY,
+        size: fontSizePt,
+        font: font,
+        color: rgbColor
+      });
+    }
+  }
+  
+  return await newPdfDoc.save();
 }
 
 /**

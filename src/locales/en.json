@@ -1,0 +1,77 @@
+{
+  "toolbar": {
+    "newPdf": "New PDF",
+    "addText": "Add Text",
+    "whiteout": "Whiteout",
+    "copyArea": "Copy Area",
+    "selectArea": "(Select Area)",
+    "place": "(Place)",
+    "pan": "Move",
+    "delete": "Delete",
+    "undo": "Undo",
+    "redo": "Redo",
+    "zoom": "Zoom",
+    "previous": "Previous",
+    "next": "Next",
+    "page": "Page",
+    "of": "of",
+    "exportPdf": "Export PDF",
+    "download": "Download",
+    "language": "Language"
+  },
+  "textSidebar": {
+    "size": "Size",
+    "fontFamily": "Font Family",
+    "color": "Color",
+    "selectColor": "Select Color",
+    "style": "Style",
+    "bold": "Bold",
+    "italic": "Italic",
+    "preview": "Preview"
+  },
+  "colors": {
+    "black": "Black",
+    "white": "White",
+    "red": "Red",
+    "blue": "Blue",
+    "green": "Green",
+    "yellow": "Yellow",
+    "orange": "Orange",
+    "purple": "Purple",
+    "pink": "Pink",
+    "gray": "Gray",
+    "darkBlue": "Dark Blue",
+    "darkGreen": "Dark Green"
+  },
+  "landingPage": {
+    "title": "PDF Editor",
+    "subtitle": "Edit your PDF files with text, whiteout and copy area tools",
+    "selectPdfFile": "Please select a PDF file",
+    "dropPdfFile": "Please drop a PDF file",
+    "dragDrop": "Drag and drop a PDF file here",
+    "orClick": "or click to select"
+  },
+  "floatingControlBar": {
+    "page": "Page",
+    "previousPage": "Previous Page",
+    "nextPage": "Next Page",
+    "zoomIn": "Zoom In",
+    "zoomOut": "Zoom Out",
+    "panTool": "Pan/Move"
+  },
+  "tooltips": {
+    "undo": "Undo (Ctrl+Z)",
+    "redo": "Redo (Ctrl+Y)"
+  },
+  "errors": {
+    "exportFailed": "Could not export PDF"
+  },
+  "downloadModal": {
+    "title": "Well done!",
+    "subtitle": "Choose a file format to download your file",
+    "filename": "Filename",
+    "cancel": "Cancel",
+    "download": "Download"
+  }
+}
+

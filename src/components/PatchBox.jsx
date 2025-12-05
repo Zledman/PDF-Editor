@@ -7,7 +7,8 @@ export default function PatchBox({
   onUpdate, 
   onDelete,
   isSelected,
-  pdfPage,
+  pdfPage, // Target page (där patchen ska visas)
+  sourcePdfPage, // Source page (där patchen kopieras från)
   pdfPageNum,
   tool = null
 }) {
@@ -23,41 +24,61 @@ export default function PatchBox({
       const ctx = canvasRef.current.getContext('2d');
       const img = new Image();
       img.onload = () => {
+        // Använd bildens faktiska dimensioner för canvas för att behålla skärpan
+        // Canvas-storleken ska matcha bildens upplösning, inte CSS-storleken
+        const imgWidth = img.naturalWidth || img.width;
+        const imgHeight = img.naturalHeight || img.height;
+        
+        // Sätt canvas-storleken till bildens faktiska dimensioner
+        canvasRef.current.width = imgWidth;
+        canvasRef.current.height = imgHeight;
+        
         ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-        ctx.drawImage(img, 0, 0, canvasRef.current.width, canvasRef.current.height);
+        // Rita bilden i full upplösning
+        ctx.drawImage(img, 0, 0);
       };
       img.src = imageData;
     }
   }, [imageData]);
 
   // Om patchBox har sourceRect men inte imageData, rendera från PDF
+  // Använd sourcePdfPage om den finns, annars fallback till pdfPage (för bakåtkompatibilitet)
   useEffect(() => {
-    if (patchBox.sourceRect && !imageData && pdfPage) {
-      renderPatchFromPDF(patchBox.sourceRect, patchBox.targetRect);
+    const pageToUse = sourcePdfPage || pdfPage;
+    if (patchBox.sourceRect && !imageData && pageToUse) {
+      renderPatchFromPDF(patchBox.sourceRect, patchBox.targetRect, pageToUse);
     }
-  }, [patchBox.sourceRect, pdfPage]);
+  }, [patchBox.sourceRect, pdfPage, sourcePdfPage]);
 
-  const renderPatchFromPDF = async (sourceRectPt, targetRectPt) => {
-    if (!pdfPage) return;
+  const renderPatchFromPDF = async (sourceRectPt, targetRectPt, pageToRender = null) => {
+    const page = pageToRender || pdfPage;
+    if (!page) return;
 
     try {
-      const viewport = pdfPage.getViewport({ scale: 2.0 }); // Högre upplösning för bättre kvalitet
+      // Använd högre upplösning baserat på zoom för att behålla skärpan
+      // Öka scale ytterligare för att säkerställa hög kvalitet även vid zoom
+      const renderScale = Math.max(2.0, zoom * 2.0); // Minst 2x, eller zoom * 2 för bättre kvalitet
+      const viewport = page.getViewport({ scale: renderScale });
       const canvas = document.createElement('canvas');
       canvas.width = viewport.width;
       canvas.height = viewport.height;
       const context = canvas.getContext('2d');
 
-      await pdfPage.render({
+      await page.render({
         canvasContext: context,
         viewport: viewport
       }).promise;
 
-      // Klipp ut sourceRect-området
-      const sourceRectPx = rectPtToPx(sourceRectPt, 2.0);
+      // Klipp ut sourceRect-området med samma scale
+      const sourceRectPx = rectPtToPx(sourceRectPt, renderScale);
       const patchCanvas = document.createElement('canvas');
       patchCanvas.width = sourceRectPx.width;
       patchCanvas.height = sourceRectPx.height;
       const patchCtx = patchCanvas.getContext('2d');
+
+      // Använd imageSmoothingEnabled för bättre kvalitet
+      patchCtx.imageSmoothingEnabled = true;
+      patchCtx.imageSmoothingQuality = 'high';
 
       patchCtx.drawImage(
         canvas,
@@ -71,7 +92,8 @@ export default function PatchBox({
         sourceRectPx.height
       );
 
-      const base64 = patchCanvas.toDataURL('image/png');
+      // Använd högre kvalitet för PNG-export
+      const base64 = patchCanvas.toDataURL('image/png', 1.0);
       setImageData(base64);
 
       if (onUpdate) {
@@ -86,11 +108,14 @@ export default function PatchBox({
   };
 
   const handleMouseDown = (e) => {
-    // Stoppa propagation endast om det inte är patch-verktyget som är aktivt
-    // (för att tillåta drag när verktyget är aktivt)
-    if (tool !== 'patch') {
-      e.stopPropagation();
+    // Stoppa propagation endast om patch-verktyget är aktivt
+    // När text-verktyget eller andra verktyg är aktiva, låt klick gå igenom
+    if (tool === 'patch') {
+      // Låt patch-verktyget hantera klick
+      return;
     }
+    // För alla andra verktyg (inklusive text), låt klick gå igenom
+    // (pointerEvents: 'none' borde redan hantera detta, men detta är en extra säkerhet)
   };
 
   return (
@@ -105,19 +130,21 @@ export default function PatchBox({
         border: isSelected && tool === 'patch' ? '2px solid #00ff00' : tool === 'patch' ? '1px dashed rgba(0,255,0,0.5)' : 'none',
         cursor: isSelected && tool === 'patch' ? 'move' : 'default',
         boxSizing: 'border-box',
-        overflow: 'hidden'
+        overflow: 'hidden',
+        zIndex: 1, // Patch boxes ska ligga under text boxes
+        pointerEvents: tool === 'patch' ? 'auto' : 'none' // Tillåt klick endast när patch-verktyget är aktivt, annars låt klick gå igenom till text boxes och andra element
       }}
-      onMouseDown={handleMouseDown}
+      onMouseDown={tool === 'patch' ? handleMouseDown : undefined}
     >
       {imageData ? (
         <canvas
           ref={canvasRef}
-          width={targetRectPx.width}
-          height={targetRectPx.height}
           style={{
             width: '100%',
             height: '100%',
-            display: 'block'
+            display: 'block',
+            imageRendering: 'crisp-edges', // Förhindra bilineär interpolation
+            pointerEvents: tool === 'patch' ? 'auto' : 'none' // Följ samma logik som parent
           }}
         />
       ) : (
@@ -129,7 +156,8 @@ export default function PatchBox({
           alignItems: 'center',
           justifyContent: 'center',
           fontSize: '12px',
-          color: '#666'
+          color: '#666',
+          pointerEvents: tool === 'patch' ? 'auto' : 'none' // Följ samma logik som parent
         }}>
           Laddar patch...
         </div>

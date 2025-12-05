@@ -25,3 +25,14 @@ input[type="file"] {
   font-family: inherit;
 }
 
+/* Anpassade cursors som alltid är synliga */
+.text-cursor {
+  /* I-cursor (text cursor) med synlig kontur */
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='20' viewBox='0 0 12 20'%3E%3Cpath d='M6 0 L6 20' stroke='%23000' stroke-width='2'/%3E%3Cpath d='M6 0 L6 20' stroke='%23fff' stroke-width='1'/%3E%3Cpath d='M2 4 L10 4' stroke='%23000' stroke-width='2'/%3E%3Cpath d='M2 4 L10 4' stroke='%23fff' stroke-width='1'/%3E%3Cpath d='M2 16 L10 16' stroke='%23000' stroke-width='2'/%3E%3Cpath d='M2 16 L10 16' stroke='%23fff' stroke-width='1'/%3E%3C/svg%3E") 6 10, text !important;
+}
+
+.crosshair-cursor {
+  /* Crosshair cursor med synlig kontur */
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath d='M8 0 L8 16 M0 8 L16 8' stroke='%23000' stroke-width='1.5'/%3E%3Cpath d='M8 0 L8 16 M0 8 L16 8' stroke='%23fff' stroke-width='0.5'/%3E%3C/svg%3E") 8 8, crosshair !important;
+}
+
