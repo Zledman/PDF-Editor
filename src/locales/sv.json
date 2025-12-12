@@ -7,6 +7,11 @@
     "selectArea": "(Välj område)",
     "place": "(Placera)",
     "pan": "Flytta",
+    "shapes": "Form",
+    "rectangle": "Rektangel",
+    "circle": "Cirkel",
+    "line": "Linje",
+    "arrow": "Pil",
     "delete": "Ta bort",
     "undo": "Ångra",
     "redo": "Gör om",
@@ -17,7 +22,8 @@
     "of": "av",
     "exportPdf": "Exportera PDF",
     "download": "Ladda ner",
-    "language": "Språk"
+    "language": "Språk",
+    "pageManagement": "Sidhantering"
   },
   "textSidebar": {
     "size": "Storlek",
@@ -28,6 +34,19 @@
     "bold": "Fet",
     "italic": "Kursiv",
     "preview": "Förhandsvisning"
+  },
+  "whiteoutSidebar": {
+    "color": "Färg",
+    "selectColor": "Välj färg",
+    "preview": "Förhandsgranskning"
+  },
+  "shapeSidebar": {
+    "type": "Typ",
+    "strokeColor": "Linjefärg",
+    "fillColor": "Fyllningsfärg",
+    "strokeWidth": "Linjetjocklek",
+    "selectColor": "Välj färg",
+    "preview": "Förhandsgranskning"
   },
   "colors": {
     "black": "Svart",
@@ -64,7 +83,33 @@
     "redo": "Gör om (Ctrl+Y)"
   },
   "errors": {
-    "exportFailed": "Kunde inte exportera PDF"
+    "exportFailed": "Kunde inte exportera PDF",
+    "selectPdfFile": "Vänligen välj en PDF-fil",
+    "noPdfLoaded": "Ingen PDF laddad",
+    "loadFailed": "Kunde inte ladda PDF-filen",
+    "unknownFormat": "Okänt filformat",
+    "rotateFailed": "Rotation misslyckades",
+    "deleteFailed": "Borttagning misslyckades",
+    "addPageFailed": "Tillägg av sida misslyckades"
+  },
+  "loading": {
+    "loadingPdf": "Laddar PDF...",
+    "parsingPdf": "Analyserar PDF...",
+    "exporting": "Exporterar fil...",
+    "exportingImages": "Exporterar bilder...",
+    "rotatingPages": "Roterar sidor...",
+    "deletingPages": "Tar bort sidor...",
+    "addingPage": "Lägger till sida..."
+  },
+  "success": {
+    "pdfLoaded": "PDF laddad framgångsrikt",
+    "exported": "PDF exporterad framgångsrikt",
+    "downloaded": "Fil nedladdad framgångsrikt",
+    "pagesRotated": "{{count}} sida/sidor roterade",
+    "pagesDeleted": "{{count}} sida/sidor borttagna",
+    "pageAdded": "Sida tillagd",
+    "copied": "Element kopierat",
+    "pasted": "{{count}} element klistrade in"
   },
   "downloadModal": {
     "title": "Bra jobbat!",
@@ -72,6 +117,25 @@
     "filename": "Filnamn",
     "cancel": "Avbryt",
     "download": "Ladda ner"
+  },
+  "pageManagement": {
+    "title": "Sidhantering",
+    "close": "Stäng",
+    "selectPages": "Välj sidor",
+    "selected": "valda",
+    "selectAll": "Välj alla",
+    "deselectAll": "Avmarkera alla",
+    "page": "Sida",
+    "rotatePages": "Rotera sidor",
+    "angle": "Vinkel",
+    "rotate": "Rotera",
+    "deletePages": "Ta bort sidor",
+    "delete": "Ta bort",
+    "cannotDeleteLast": "Kan inte ta bort sista sidan",
+    "addPages": "Lägg till sidor",
+    "addBlankPage": "Lägg till tom sida",
+    "addFromFile": "Lägg till från fil",
+    "confirmDelete": "Vill du verkligen ta bort {{count}} sida/sidor?"
   }
 }
 

@@ -29,6 +29,14 @@ export default function WhiteoutBox({
   // Visa ram endast när whiteout-verktyget är aktivt
   const showBorder = tool === 'whiteout';
   const borderStyle = isSelected && tool === 'whiteout' ? '2px solid #ff6600' : showBorder ? '1px dashed rgba(255, 107, 53, 0.5)' : 'none';
+  
+  // Cursor: pointer när tool === null, move när vald och verktyget är aktivt, annars default
+  let cursorStyle = 'default';
+  if (tool === null) {
+    cursorStyle = 'pointer';
+  } else if (isSelected && tool === 'whiteout') {
+    cursorStyle = 'move';
+  }
 
   // Resize handles (endast när vald OCH whiteout-verktyget är aktivt)
   const handleSize = 8;
@@ -52,15 +60,15 @@ export default function WhiteoutBox({
         top: `${rectPx.y}px`,
         width: `${rectPx.width}px`,
         height: `${rectPx.height}px`,
-        backgroundColor: 'white',
+        backgroundColor: whiteoutBox.color || 'white',
         border: borderStyle,
-        cursor: isSelected && tool === 'whiteout' ? 'move' : 'default',
+        cursor: cursorStyle,
         boxSizing: 'border-box',
         opacity: 0.9,
         zIndex: 2, // Whiteout boxes ska ligga under text boxes
-        pointerEvents: tool === 'whiteout' ? 'auto' : 'none' // Tillåt klick endast när whiteout-verktyget är aktivt, annars låt klick gå igenom till text boxes och andra element
+        pointerEvents: (tool === null || tool === 'whiteout') ? 'auto' : 'none' // Tillåt klick när tool === null (för selektion) eller när whiteout-verktyget är aktivt
       }}
-      onMouseDown={tool === 'whiteout' ? handleMouseDown : undefined}
+      onMouseDown={(tool === null || tool === 'whiteout') ? handleMouseDown : undefined}
     >
       {/* Resize handles */}
       {isSelected && handles.map((handle) => (

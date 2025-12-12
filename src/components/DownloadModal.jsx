@@ -155,6 +155,7 @@ export default function DownloadModal({ isOpen, onClose, onDownload, defaultFile
         {/* Filename input */}
         <div style={{ marginBottom: '25px' }}>
           <label
+            htmlFor="download-filename"
             style={{
               display: 'block',
               marginBottom: '8px',
@@ -166,6 +167,8 @@ export default function DownloadModal({ isOpen, onClose, onDownload, defaultFile
             {t('downloadModal.filename', 'Filnamn')}
           </label>
           <input
+            id="download-filename"
+            name="filename"
             type="text"
             value={filename}
             onChange={(e) => setFilename(e.target.value)}

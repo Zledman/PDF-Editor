@@ -9,11 +9,13 @@
   },
   "dependencies": {
     "docx": "^9.5.1",
+    "i18next": "^23.7.6",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^3.11.174",
     "pptxgenjs": "^4.0.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-i18next": "^13.5.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

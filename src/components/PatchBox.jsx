@@ -108,15 +108,22 @@ export default function PatchBox({
   };
 
   const handleMouseDown = (e) => {
-    // Stoppa propagation endast om patch-verktyget är aktivt
-    // När text-verktyget eller andra verktyg är aktiva, låt klick gå igenom
-    if (tool === 'patch') {
-      // Låt patch-verktyget hantera klick
+    // Låt patch-verktyget eller selektionslogiken hantera klick när tool === null
+    if (tool === 'patch' || tool === null) {
+      // Låt patch-verktyget/selektionslogiken hantera klick
       return;
     }
     // För alla andra verktyg (inklusive text), låt klick gå igenom
     // (pointerEvents: 'none' borde redan hantera detta, men detta är en extra säkerhet)
   };
+  
+  // Cursor: pointer när tool === null, move när vald och verktyget är aktivt, annars default
+  let cursorStyle = 'default';
+  if (tool === null) {
+    cursorStyle = 'pointer';
+  } else if (isSelected && tool === 'patch') {
+    cursorStyle = 'move';
+  }
 
   return (
     <div
@@ -128,13 +135,13 @@ export default function PatchBox({
         width: `${targetRectPx.width}px`,
         height: `${targetRectPx.height}px`,
         border: isSelected && tool === 'patch' ? '2px solid #00ff00' : tool === 'patch' ? '1px dashed rgba(0,255,0,0.5)' : 'none',
-        cursor: isSelected && tool === 'patch' ? 'move' : 'default',
+        cursor: cursorStyle,
         boxSizing: 'border-box',
         overflow: 'hidden',
         zIndex: 1, // Patch boxes ska ligga under text boxes
-        pointerEvents: tool === 'patch' ? 'auto' : 'none' // Tillåt klick endast när patch-verktyget är aktivt, annars låt klick gå igenom till text boxes och andra element
+        pointerEvents: (tool === null || tool === 'patch') ? 'auto' : 'none' // Tillåt klick när tool === null (för selektion) eller när patch-verktyget är aktivt
       }}
-      onMouseDown={tool === 'patch' ? handleMouseDown : undefined}
+      onMouseDown={(tool === null || tool === 'patch') ? handleMouseDown : undefined}
     >
       {imageData ? (
         <canvas

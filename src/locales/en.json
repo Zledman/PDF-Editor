@@ -7,6 +7,11 @@
     "selectArea": "(Select Area)",
     "place": "(Place)",
     "pan": "Move",
+    "shapes": "Shape",
+    "rectangle": "Rectangle",
+    "circle": "Circle",
+    "line": "Line",
+    "arrow": "Arrow",
     "delete": "Delete",
     "undo": "Undo",
     "redo": "Redo",
@@ -17,7 +22,8 @@
     "of": "of",
     "exportPdf": "Export PDF",
     "download": "Download",
-    "language": "Language"
+    "language": "Language",
+    "pageManagement": "Page Management"
   },
   "textSidebar": {
     "size": "Size",
@@ -27,6 +33,19 @@
     "style": "Style",
     "bold": "Bold",
     "italic": "Italic",
+    "preview": "Preview"
+  },
+  "whiteoutSidebar": {
+    "color": "Color",
+    "selectColor": "Select Color",
+    "preview": "Preview"
+  },
+  "shapeSidebar": {
+    "type": "Type",
+    "strokeColor": "Stroke Color",
+    "fillColor": "Fill Color",
+    "strokeWidth": "Stroke Width",
+    "selectColor": "Select Color",
     "preview": "Preview"
   },
   "colors": {
@@ -64,7 +83,33 @@
     "redo": "Redo (Ctrl+Y)"
   },
   "errors": {
-    "exportFailed": "Could not export PDF"
+    "exportFailed": "Could not export PDF",
+    "selectPdfFile": "Please select a PDF file",
+    "noPdfLoaded": "No PDF loaded",
+    "loadFailed": "Could not load PDF file",
+    "unknownFormat": "Unknown file format",
+    "rotateFailed": "Rotation failed",
+    "deleteFailed": "Deletion failed",
+    "addPageFailed": "Adding page failed"
+  },
+  "loading": {
+    "loadingPdf": "Loading PDF...",
+    "parsingPdf": "Parsing PDF...",
+    "exporting": "Exporting file...",
+    "exportingImages": "Exporting images...",
+    "rotatingPages": "Rotating pages...",
+    "deletingPages": "Deleting pages...",
+    "addingPage": "Adding page..."
+  },
+  "success": {
+    "pdfLoaded": "PDF loaded successfully",
+    "exported": "PDF exported successfully",
+    "downloaded": "File downloaded successfully",
+    "pagesRotated": "{{count}} page/pages rotated",
+    "pagesDeleted": "{{count}} page/pages deleted",
+    "pageAdded": "Page added",
+    "copied": "Element copied",
+    "pasted": "{{count}} element(s) pasted"
   },
   "downloadModal": {
     "title": "Well done!",
@@ -72,6 +117,25 @@
     "filename": "Filename",
     "cancel": "Cancel",
     "download": "Download"
+  },
+  "pageManagement": {
+    "title": "Page Management",
+    "close": "Close",
+    "selectPages": "Select Pages",
+    "selected": "selected",
+    "selectAll": "Select All",
+    "deselectAll": "Deselect All",
+    "page": "Page",
+    "rotatePages": "Rotate Pages",
+    "angle": "Angle",
+    "rotate": "Rotate",
+    "deletePages": "Delete Pages",
+    "delete": "Delete",
+    "cannotDeleteLast": "Cannot delete last page",
+    "addPages": "Add Pages",
+    "addBlankPage": "Add Blank Page",
+    "addFromFile": "Add From File",
+    "confirmDelete": "Are you sure you want to delete {{count}} page/pages?"
   }
 }
 

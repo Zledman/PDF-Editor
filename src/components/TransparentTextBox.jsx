@@ -10,7 +10,9 @@ export default function TransparentTextBox({
   isSelected,
   autoEdit = false, // Ny prop för att automatiskt starta redigering
   textBoxIndex = null, // Index för att kunna hitta textarea
-  onResizeStart = null // Callback för resize-start
+  onResizeStart = null, // Callback för resize-start
+  onRotationStart = null, // Callback för rotation-start
+  tool = null // Aktuellt verktyg för cursor-styling
 }) {
   const [isEditing, setIsEditing] = useState(autoEdit);
   const [localText, setLocalText] = useState(textBox.text || '');
@@ -272,12 +274,17 @@ export default function TransparentTextBox({
   };
 
   const handleMouseDown = (e) => {
-    // Stoppa propagation endast om det inte är en resize-handle
+    // Stoppa propagation endast om det inte är en resize-handle eller rotation-handle
     // (för att tillåta drag när textrutan är vald)
     if (e.target.dataset.resizeHandle) {
       e.stopPropagation();
       if (onResizeStart) {
         onResizeStart(e.target.dataset.resizeHandle, e);
+      }
+    } else if (e.target.dataset.rotationHandle) {
+      e.stopPropagation();
+      if (onRotationStart) {
+        onRotationStart(e);
       }
     } else if (isEditing) {
       // Om vi är i edit-läge, stoppa propagation för att inte avmarkera
@@ -331,7 +338,7 @@ export default function TransparentTextBox({
         outline: isSelected ? '2px solid #0066ff' : 'none',
         outlineOffset: '0px', // Ingen offset för att outline ska ligga exakt på kanten
         backgroundColor: 'transparent',
-        cursor: isSelected && !isEditing ? 'move' : (isEditing ? 'text' : 'default'),
+        cursor: isEditing ? 'text' : (tool === null ? 'pointer' : (isSelected && !isEditing ? 'move' : 'default')),
         boxSizing: 'content-box', // Använd content-box så att outline inte påverkar mått
         display: 'inline-block', // Låt containern expandera med innehållet
         overflow: 'visible', // Tillåt att descenders syns utanför containern om nödvändigt
@@ -340,6 +347,8 @@ export default function TransparentTextBox({
         MozUserSelect: isEditing ? 'auto' : 'none',
         msUserSelect: isEditing ? 'auto' : 'none',
         transition: isEditing ? 'height 0.2s ease, width 0.2s ease' : 'none', // Mjuk animation vid expansion/krympning
+        transform: `rotate(${textBox.rotation || 0}deg)`, // Applicera rotation
+        transformOrigin: 'center', // Rotera runt centrum
         zIndex: 10 // Text ska alltid ligga överst, ovanpå patch boxes
       }}
       onMouseDown={handleMouseDown}
@@ -347,6 +356,8 @@ export default function TransparentTextBox({
     >
       {isEditing ? (
         <textarea
+          id={textBoxIndex !== null ? `textbox-textarea-${textBoxIndex}` : undefined}
+          name={textBoxIndex !== null ? `textbox-${textBoxIndex}` : undefined}
           ref={textRef}
           data-textbox-index={textBoxIndex}
           value={localText}
@@ -430,6 +441,51 @@ export default function TransparentTextBox({
           }}
         />
       ))}
+      
+      {/* Linje mellan s-handle och rotation-handle */}
+      {isSelected && !isEditing && (
+        <div
+          style={{
+            position: 'absolute',
+            left: '50%',
+            top: '100%',
+            marginLeft: -1, // Centrera 1px bred linje
+            marginTop: -handleOffset, // Börja från s-handlen (som är på -handleOffset från bottom)
+            width: '2px',
+            height: `${30 + handleOffset}px`, // Avstånd från s-handle till rotation-handle (30px + handleOffset)
+            backgroundColor: '#0066ff',
+            pointerEvents: 'none', // Låt klick gå igenom linjen
+            zIndex: 9 // Under handles men över text
+          }}
+        />
+      )}
+      
+      {/* Rotation handle - längre ner, centrerad */}
+      {isSelected && !isEditing && (
+        <div
+          data-rotation-handle
+          style={{
+            position: 'absolute',
+            left: '50%',
+            top: '100%',
+            marginLeft: -handleSize / 2,
+            marginTop: 30, // Fast avstånd under textrutan
+            width: `${handleSize}px`,
+            height: `${handleSize}px`,
+            backgroundColor: '#0066ff',
+            border: '1px solid #fff',
+            borderRadius: '2px',
+            cursor: 'grab',
+            zIndex: 10
+          }}
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            if (onRotationStart) {
+              onRotationStart(e);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

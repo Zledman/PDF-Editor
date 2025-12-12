@@ -188,13 +188,42 @@ export async function exportPDF(pdfData, textBoxes = [], whiteoutBoxes = [], pat
       // För att matcha redigering: baseline ska vara på rect.y + ungefär 85% av fontstorleken
       const baselineY = height - rect.y - (fontSizePt * 0.85);
 
-      page.drawText(text, {
-        x: rect.x,
-        y: baselineY,
-        size: fontSizePt,
-        font: font,
-        color: rgbColor
-      });
+      // Hantera rotation om den finns
+      const rotation = textBox.rotation || 0;
+      
+      if (rotation !== 0) {
+        // Beräkna textrutans centrum
+        const centerX = rect.x + rect.width / 2;
+        const centerY = height - rect.y - rect.height / 2; // Invertera y-koordinaten för PDF
+        
+        // Konvertera rotation från grader till radianer
+        const rotationRad = (rotation * Math.PI) / 180;
+        
+        // Spara grafiktillstånd, rotera, rita text, återställ
+        page.pushGraphicsState();
+        page.translateContent(centerX, centerY);
+        page.rotateContent(rotationRad);
+        page.translateContent(-centerX, -centerY);
+        
+        page.drawText(text, {
+          x: rect.x,
+          y: baselineY,
+          size: fontSizePt,
+          font: font,
+          color: rgbColor
+        });
+        
+        page.popGraphicsState();
+      } else {
+        // Ingen rotation, rita direkt
+        page.drawText(text, {
+          x: rect.x,
+          y: baselineY,
+          size: fontSizePt,
+          font: font,
+          color: rgbColor
+        });
+      }
     }
   }
 
@@ -330,13 +359,42 @@ async function exportPDFAsImages(pdfData, textBoxes = [], whiteoutBoxes = [], pa
       const rgbColor = hexToRgb(color);
       const baselineY = height - rect.y - (fontSizePt * 0.85);
       
-      pdfPage.drawText(text, {
-        x: rect.x,
-        y: baselineY,
-        size: fontSizePt,
-        font: font,
-        color: rgbColor
-      });
+      // Hantera rotation om den finns
+      const rotation = textBox.rotation || 0;
+      
+      if (rotation !== 0) {
+        // Beräkna textrutans centrum
+        const centerX = rect.x + rect.width / 2;
+        const centerY = height - rect.y - rect.height / 2; // Invertera y-koordinaten för PDF
+        
+        // Konvertera rotation från grader till radianer
+        const rotationRad = (rotation * Math.PI) / 180;
+        
+        // Spara grafiktillstånd, rotera, rita text, återställ
+        pdfPage.pushGraphicsState();
+        pdfPage.translateContent(centerX, centerY);
+        pdfPage.rotateContent(rotationRad);
+        pdfPage.translateContent(-centerX, -centerY);
+        
+        pdfPage.drawText(text, {
+          x: rect.x,
+          y: baselineY,
+          size: fontSizePt,
+          font: font,
+          color: rgbColor
+        });
+        
+        pdfPage.popGraphicsState();
+      } else {
+        // Ingen rotation, rita direkt
+        pdfPage.drawText(text, {
+          x: rect.x,
+          y: baselineY,
+          size: fontSizePt,
+          font: font,
+          color: rgbColor
+        });
+      }
     }
   }
   

@@ -209,6 +209,8 @@ export default function LandingPage({ onFileSelect }) {
         </div>
 
         <input
+          id="pdf-file-input"
+          name="pdf-file"
           ref={fileInputRef}
           type="file"
           accept=".pdf"
