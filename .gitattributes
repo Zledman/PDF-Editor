@@ -1,0 +1,17 @@
+# Default: normalize text files and keep LF in repo (works well across Windows/macOS/Linux)
+* text=auto eol=lf
+
+# Windows command scripts
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Treat common binary formats as binary (no line ending normalization)
+*.pdf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.woff binary
+*.woff2 binary
+

@@ -1,12 +1,14 @@
 # Dependencies
 node_modules/
-package-lock.json
 yarn.lock
 
 # Build outputs
 dist/
 build/
 .vite/
+
+# Java build outputs
+server-java/target/
 
 # Environment variables
 .env
