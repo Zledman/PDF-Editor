@@ -34,7 +34,11 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pdfPages, setPdfPages] = useState([]); // Array av alla renderade PDF-sidor
   const [pageViewports, setPageViewports] = useState([]); // Viewports för alla sidor
-  const [pageHeights, setPageHeights] = useState([]); // Höjder för alla sidor (för scroll-tracking)
+  // Layout / navigation
+  const [pageLayoutMode, setPageLayoutMode] = useState('auto'); // 'single' | 'double' | 'auto'
+  const [effectiveLayout, setEffectiveLayout] = useState('single'); // 'single' | 'double' (auto resolves into this)
+  const [navMode, setNavMode] = useState('scroll'); // 'scroll' | 'paged'
+  const [canScrollCurrentPage, setCanScrollCurrentPage] = useState(false); // for paged mode: show scrollbar only when needed
   const [zoom, setZoom] = useState(1.0);
   const [tool, setTool] = useState(null); // 'text', 'whiteout', 'patch', 'pan', eller null för inget verktyg
   const [patchMode, setPatchMode] = useState('select'); // 'select' eller 'place'
@@ -70,7 +74,9 @@ export default function App() {
   const [textBoxes, setTextBoxes] = useState([]);
   const [whiteoutBoxes, setWhiteoutBoxes] = useState([]);
   const [patchBoxes, setPatchBoxes] = useState([]);
+  const [pendingImageData, setPendingImageData] = useState(null); // data URL för bild som ska placeras
   const [shapeBoxes, setShapeBoxes] = useState([]);
+  const [highlightStrokes, setHighlightStrokes] = useState([]); // Frihand-markeringar
   const [commentBoxes, setCommentBoxes] = useState([]);
   const [selectedElement, setSelectedElement] = useState(null);
   const [selectedType, setSelectedType] = useState(null);
@@ -88,6 +94,42 @@ export default function App() {
   
   // Whiteout-inställningar
   const [whiteoutColor, setWhiteoutColor] = useState('#FFFFFF');
+  
+  // Kommentar-inställningar
+  const [commentSettings, setCommentSettings] = useState({
+    backgroundColor: '#FFEB3B', // Färg för markör och popup-bakgrund
+    icon: 'speech-bubble' // Typ av ikon: 'speech-bubble', 'arrow', 'checkmark', 'x', 'star', 'key'
+  });
+  const [showCommentColorPalette, setShowCommentColorPalette] = useState(false);
+
+  // Highlight-inställningar
+  const [highlightSettings, setHighlightSettings] = useState({
+    color: '#FFEB3B',
+    opacity: 0.35,
+    strokeWidth: 12
+  });
+  const [highlightMode, setHighlightMode] = useState('rect'); // 'rect' | 'freehand'
+  const [currentStroke, setCurrentStroke] = useState(null); // För live-frihand
+  const [highlightCursor, setHighlightCursor] = useState(null); // { pageNum, x, y }
+  const [eraserSettings, setEraserSettings] = useState({
+    size: 20
+  });
+  const [eraserCursor, setEraserCursor] = useState(null); // { pageNum, x, y }
+  const [isErasing, setIsErasing] = useState(false);
+  const [hasErasedThisDrag, setHasErasedThisDrag] = useState(false);
+  const [eraserCursorColor, setEraserCursorColor] = useState('rgba(255,255,255,0.9)');
+  const [hoveredTextBoxIndex, setHoveredTextBoxIndex] = useState(null); // För hovring i edit-text-läge
+  const [textEditTrigger, setTextEditTrigger] = useState(null); // Triggar redigering av befintlig textruta
+
+  const hexToRgba = (hex, opacity = 1) => {
+    if (!hex) return `rgba(255,255,0,${opacity})`;
+    const parsed = hex.replace('#', '');
+    if (parsed.length !== 6) return `rgba(255,255,0,${opacity})`;
+    const r = parseInt(parsed.substring(0, 2), 16);
+    const g = parseInt(parsed.substring(2, 4), 16);
+    const b = parseInt(parsed.substring(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+  };
   
   // Form-inställningar
   const [shapeSettings, setShapeSettings] = useState({
@@ -111,14 +153,23 @@ export default function App() {
   const isResizingRef = useRef(false);
   const isSyncingFromSelectionRef = useRef(false);
   const scrollPositionRef = useRef(0); // Spara scroll-position när tool ändras
+  const currentPageRef = useRef(currentPage);
+  useEffect(() => { currentPageRef.current = currentPage; }, [currentPage]);
+  const pendingViewerScrollRestoreRef = useRef(null); // { pageNum, offsetInPage, align?: 'keep'|'center' }
+  const suppressPageFromScrollRef = useRef(false);
+
+  // Dropdown state (top toolbar)
+  const [showPageLayoutMenu, setShowPageLayoutMenu] = useState(false);
+  const pageLayoutMenuRef = useRef(null);
 
   // Spara tillstånd till history (måste vara före useEffect som använder den)
-  const saveToHistory = useCallback((newTextBoxes = null, newWhiteoutBoxes = null, newPatchBoxes = null, newShapeBoxes = null, newCommentBoxes = null) => {
+  const saveToHistory = useCallback((newTextBoxes = null, newWhiteoutBoxes = null, newPatchBoxes = null, newShapeBoxes = null, newCommentBoxes = null, newHighlightStrokes = null) => {
     const state = {
       textBoxes: JSON.parse(JSON.stringify(newTextBoxes !== null ? newTextBoxes : textBoxes)),
       whiteoutBoxes: JSON.parse(JSON.stringify(newWhiteoutBoxes !== null ? newWhiteoutBoxes : whiteoutBoxes)),
       patchBoxes: JSON.parse(JSON.stringify(newPatchBoxes !== null ? newPatchBoxes : patchBoxes)),
       shapeBoxes: JSON.parse(JSON.stringify(newShapeBoxes !== null ? newShapeBoxes : shapeBoxes)),
+      highlightStrokes: JSON.parse(JSON.stringify(newHighlightStrokes !== null ? newHighlightStrokes : highlightStrokes)),
       commentBoxes: JSON.parse(JSON.stringify(newCommentBoxes !== null ? newCommentBoxes : commentBoxes))
     };
     
@@ -138,7 +189,7 @@ export default function App() {
       const newIndex = prev + 1;
       return newIndex >= maxHistorySize ? maxHistorySize - 1 : newIndex;
     });
-  }, [textBoxes, whiteoutBoxes, patchBoxes, shapeBoxes, commentBoxes, historyIndex]);
+  }, [textBoxes, whiteoutBoxes, patchBoxes, shapeBoxes, highlightStrokes, commentBoxes, historyIndex]);
 
   // Uppdatera textSettings när en textbox är vald (endast när selection eller textBox ändras)
   useEffect(() => {
@@ -195,14 +246,20 @@ export default function App() {
           selectedTextBox.fontStyle !== textSettings.fontStyle;
 
         if (hasChanged) {
-          newBoxes[selectedElement] = {
+          const sampleRectPx = rectPtToPx(selectedTextBox.originalRect || selectedTextBox.rect, zoom);
+          const sampledColor = selectedTextBox.isImported
+            ? (sampleRectAverageColor((selectedTextBox.pageIndex ?? (currentPage - 1)) + 1, sampleRectPx) || selectedTextBox.maskColor)
+            : selectedTextBox.maskColor;
+
+          newBoxes[selectedElement] = markTextBoxDirty(selectedTextBox, {
             ...selectedTextBox,
             fontSizePt: Math.round(textSettings.fontSizePt),
             fontFamily: textSettings.fontFamily,
             color: textSettings.color,
             fontWeight: textSettings.fontWeight,
-            fontStyle: textSettings.fontStyle
-          };
+            fontStyle: textSettings.fontStyle,
+            maskColor: sampledColor
+          });
           setTextBoxes(newBoxes);
           // Spara till history när inställningar ändras
           const timer = setTimeout(() => {
@@ -310,6 +367,121 @@ export default function App() {
       }
     }
   }, [shapeSettings, selectedElement, selectedType, shapeBoxes, saveToHistory]);
+
+  // Rensa hover/trigger när vi lämnar edit-text-läget
+  useEffect(() => {
+    if (tool !== 'edit-text') {
+      setHoveredTextBoxIndex(null);
+      setTextEditTrigger(null);
+    }
+  }, [tool]);
+
+  // Hjälp: samp­la medelvärde av pixlar i ett rect på en page-canvas (px)
+  const sampleRectAverageColor = useCallback((pageNum, rectPx) => {
+    const canvas = canvasRefs.current?.[pageNum];
+    if (!canvas || !rectPx) return null;
+    const ctx = canvas.getContext('2d');
+    const x = Math.max(0, Math.floor(rectPx.x));
+    const y = Math.max(0, Math.floor(rectPx.y));
+    const w = Math.max(1, Math.floor(rectPx.width));
+    const h = Math.max(1, Math.floor(rectPx.height));
+    const img = ctx.getImageData(x, y, Math.min(w, canvas.width - x), Math.min(h, canvas.height - y));
+    const data = img.data;
+    let r = 0, g = 0, b = 0, c = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      r += data[i]; g += data[i + 1]; b += data[i + 2]; c++;
+    }
+    if (!c) return null;
+    return `rgba(${Math.round(r / c)}, ${Math.round(g / c)}, ${Math.round(b / c)}, 1)`;
+  }, []);
+
+  // Hjälpare: markera textruta som "dirty" om något har ändrats (text/stil/rect/rotation)
+  const markTextBoxDirty = useCallback((prev = {}, updated = {}) => {
+    const rectChanged = prev.rect && updated.rect
+      ? prev.rect.x !== updated.rect.x ||
+        prev.rect.y !== updated.rect.y ||
+        prev.rect.width !== updated.rect.width ||
+        prev.rect.height !== updated.rect.height
+      : false;
+
+    const changed = 
+      (prev.text || '') !== (updated.text || '') ||
+      (prev.fontSizePt || 0) !== (updated.fontSizePt || 0) ||
+      (prev.fontFamily || '') !== (updated.fontFamily || '') ||
+      (prev.color || '') !== (updated.color || '') ||
+      (prev.fontWeight || '') !== (updated.fontWeight || '') ||
+      (prev.fontStyle || '') !== (updated.fontStyle || '') ||
+      (prev.rotation || 0) !== (updated.rotation || 0) ||
+      rectChanged;
+
+    const rectForSample = prev.originalRect || updated.originalRect || updated.rect || prev.rect;
+    const maskColor = prev.maskColor || updated.maskColor;
+
+    return {
+      ...updated,
+      isImported: prev.isImported ?? updated.isImported,
+      originalRect: prev.originalRect || updated.originalRect,
+      isDirty: changed ? true : (prev.isDirty || updated.isDirty || false),
+      maskColor: maskColor,
+      rectForSample // passthrough (not stored), could be used upstream if needed
+    };
+  }, []);
+
+  // Importera befintlig PDF-text till textBoxes (best effort, per text-item)
+  const importExistingPdfText = useCallback(async (doc) => {
+    if (!doc) return [];
+
+    const imported = [];
+    for (let pageNum = 1; pageNum <= doc.numPages; pageNum++) {
+      try {
+        const page = await doc.getPage(pageNum);
+        const viewport = page.getViewport({ scale: 1 });
+        const textContent = await page.getTextContent();
+
+        for (const item of textContent.items) {
+          const transform = pdfjsLib.Util.transform(viewport.transform, item.transform);
+          const x = transform[4];
+          const y = transform[5];
+          const fontHeightPx = Math.abs(transform[3]) || Math.abs(item.height || 0) * viewport.scale || 12;
+          const widthPx = (item.width || 0) * viewport.scale;
+          const heightPx = fontHeightPx || 12;
+
+          if (!item.str || widthPx <= 0 || heightPx <= 0) continue;
+
+          // Justera nedåt lite för att bättre matcha PDF-glyphernas baseline i canvas
+          const baselineAdjustPx = heightPx * 0.18;
+          const rectPx = {
+            x,
+            y: y - heightPx + baselineAdjustPx,
+            width: widthPx,
+            height: heightPx
+          };
+
+          const rectPt = rectPxToPt(rectPx, 1); // scale 1 => px≈pt
+          const fontSizePt = Math.max(MIN_FONT_PT, Math.round(fontHeightPx));
+
+          imported.push({
+            rect: rectPt,
+            originalRect: rectPt,
+            text: item.str,
+            fontSizePt,
+            fontFamily: 'Helvetica',
+            color: '#000000',
+            fontWeight: 'normal',
+            fontStyle: 'normal',
+            rotation: 0,
+            pageIndex: pageNum - 1,
+            isImported: true,
+            isDirty: false
+          });
+        }
+      } catch (err) {
+        console.warn(`Kunde inte importera text från sida ${pageNum}:`, err);
+      }
+    }
+
+    return imported;
+  }, []);
   
   const canvasRefs = useRef({}); // Objekt med pageNum som nyckel och canvas-ref som värde
   const containerRef = useRef(null);
@@ -324,6 +496,7 @@ export default function App() {
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const [isRotating, setIsRotating] = useState(false);
+  const [isMouseDown, setIsMouseDown] = useState(false); // Spårar om musknappen är nedtryckt
   const [dragStart, setDragStart] = useState(null);
   const [resizeHandle, setResizeHandle] = useState(null);
   const [rotationStart, setRotationStart] = useState(null); // {x, y} för rotation-start
@@ -350,6 +523,7 @@ export default function App() {
       setWhiteoutBoxes(JSON.parse(JSON.stringify(state.whiteoutBoxes)));
       setPatchBoxes(JSON.parse(JSON.stringify(state.patchBoxes)));
       setShapeBoxes(JSON.parse(JSON.stringify(state.shapeBoxes || [])));
+      setHighlightStrokes(JSON.parse(JSON.stringify(state.highlightStrokes || [])));
       setCommentBoxes(JSON.parse(JSON.stringify(state.commentBoxes || [])));
       setHistoryIndex(newIndex);
       setSelectedElement(null);
@@ -366,6 +540,7 @@ export default function App() {
       setWhiteoutBoxes(JSON.parse(JSON.stringify(state.whiteoutBoxes)));
       setPatchBoxes(JSON.parse(JSON.stringify(state.patchBoxes)));
       setShapeBoxes(JSON.parse(JSON.stringify(state.shapeBoxes || [])));
+      setHighlightStrokes(JSON.parse(JSON.stringify(state.highlightStrokes || [])));
       setCommentBoxes(JSON.parse(JSON.stringify(state.commentBoxes || [])));
       setHistoryIndex(newIndex);
       setSelectedElement(null);
@@ -383,10 +558,12 @@ export default function App() {
   useEffect(() => {
     if (pdfDoc) {
       const initialState = {
-        textBoxes: [],
-        whiteoutBoxes: [],
-        patchBoxes: [],
-        shapeBoxes: []
+        textBoxes: JSON.parse(JSON.stringify(textBoxes)),
+        whiteoutBoxes: JSON.parse(JSON.stringify(whiteoutBoxes)),
+        patchBoxes: JSON.parse(JSON.stringify(patchBoxes)),
+        shapeBoxes: JSON.parse(JSON.stringify(shapeBoxes)),
+        highlightStrokes: JSON.parse(JSON.stringify(highlightStrokes)),
+        commentBoxes: JSON.parse(JSON.stringify(commentBoxes))
       };
       setHistory([initialState]);
       setHistoryIndex(0);
@@ -422,6 +599,16 @@ export default function App() {
     setSelectedElement(null);
     setSelectedType(null);
   }, [selectedElement, selectedType, textBoxes, whiteoutBoxes, patchBoxes, shapeBoxes, commentBoxes, saveToHistory]);
+
+  // Avaktivera comment-verktyget när redigering avslutas
+  const handleCommentEditEnd = useCallback(() => {
+    // Använd setTimeout för att säkerställa att detta körs efter eventuella klick-händelser
+    setTimeout(() => {
+      setTool(null);
+      setSelectedElement(null);
+      setSelectedType(null);
+    }, 0);
+  }, []);
 
   // Kopiera valda element
   const handleCopy = useCallback(() => {
@@ -484,6 +671,8 @@ export default function App() {
         newElement.pageIndex = targetPage;
         // Ta bort isNew-flaggan
         delete newElement.isNew;
+        delete newElement.isImported;
+        newElement.isDirty = true;
         return newElement;
       });
       const updatedTextBoxes = [...textBoxes, ...newTextBoxes];
@@ -633,8 +822,17 @@ export default function App() {
           x: newElement.rect.x + offsetX,
           y: newElement.rect.y + offsetY
         };
+        if (newElement.originalRect) {
+          newElement.originalRect = {
+            ...newElement.originalRect,
+            x: newElement.originalRect.x + offsetX,
+            y: newElement.originalRect.y + offsetY
+          };
+        }
         newElement.pageIndex = targetPage;
         delete newElement.isNew;
+        delete newElement.isImported;
+        newElement.isDirty = true;
         return newElement;
       });
       const updatedTextBoxes = [...textBoxes, ...newTextBoxes];
@@ -746,10 +944,13 @@ export default function App() {
       if (showShapeTypeDropdown && !e.target.closest('[data-shape-type-dropdown]')) {
         setShowShapeTypeDropdown(false);
       }
+      if (showCommentColorPalette && !e.target.closest('[data-comment-color-picker]')) {
+        setShowCommentColorPalette(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showColorPalette, showWhiteoutColorPalette, showShapeStrokeColorPalette, showShapeFillColorPalette, showShapeTypeDropdown]);
+  }, [showColorPalette, showWhiteoutColorPalette, showShapeStrokeColorPalette, showShapeFillColorPalette, showShapeTypeDropdown, showCommentColorPalette]);
 
   // Stäng shape-type dropdown när shape-verktyget stängs
   useEffect(() => {
@@ -875,7 +1076,6 @@ export default function App() {
     if (!pdfDoc) {
       setPdfPages([]);
       setPageViewports([]);
-      setPageHeights([]);
       // Avbryt alla pågående render-tasks
       Object.values(renderTasksRef.current).forEach(task => {
         if (task && task.cancel) {
@@ -891,8 +1091,6 @@ export default function App() {
     const renderAllPages = async () => {
       const pages = [];
       const viewports = [];
-      const heights = [];
-      let cumulativeHeight = 0;
 
       // Avbryt alla tidigare render-tasks först
       Object.values(renderTasksRef.current).forEach(task => {
@@ -902,17 +1100,16 @@ export default function App() {
       });
       renderTasksRef.current = {};
 
+      const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
+
       for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
         try {
           const page = await pdfDoc.getPage(pageNum);
-          const viewport = page.getViewport({ scale: zoom });
+          const layoutViewport = page.getViewport({ scale: zoom }); // används för mått/scroll
+          const renderViewport = page.getViewport({ scale: zoom * dpr }); // används för skarp canvas
           
           pages.push(page);
-          viewports.push(viewport);
-          
-          // Beräkna kumulativ höjd för scroll-tracking
-          cumulativeHeight += viewport.height;
-          heights.push(cumulativeHeight);
+          viewports.push(layoutViewport);
           
           // Rendera sidan när canvas är redo
           setTimeout(() => {
@@ -926,15 +1123,17 @@ export default function App() {
               }
               
               const context = canvas.getContext('2d');
-              canvas.height = viewport.height;
-              canvas.width = viewport.width;
+              canvas.height = renderViewport.height;
+              canvas.width = renderViewport.width;
+              canvas.style.height = `${layoutViewport.height}px`;
+              canvas.style.width = `${layoutViewport.width}px`;
               
               context.clearRect(0, 0, canvas.width, canvas.height);
               
               // Starta ny render-operation och spara task
               const renderTask = page.render({
                 canvasContext: context,
-                viewport: viewport
+                viewport: renderViewport
               });
               
               renderTasksRef.current[pageNum] = renderTask;
@@ -969,7 +1168,6 @@ export default function App() {
       if (!isCancelled) {
         setPdfPages(pages);
         setPageViewports(viewports);
-        setPageHeights(heights);
       }
     };
 
@@ -987,43 +1185,236 @@ export default function App() {
     };
   }, [pdfDoc, zoom]);
 
-  // Uppdatera currentPage baserat på scroll-position
+  // Auto-layout resolution (auto => single/double based on available width)
   useEffect(() => {
-    if (!containerRef.current || pageHeights.length === 0) return;
+    if (pageLayoutMode !== 'auto') {
+      setEffectiveLayout(pageLayoutMode);
+      return;
+    }
 
-    const handleScroll = () => {
+    const compute = () => {
       const container = containerRef.current;
       if (!container) return;
 
-      const scrollTop = container.scrollTop;
-      const containerHeight = container.clientHeight;
-      const viewportCenter = scrollTop + containerHeight / 2;
+      const maxPageW = Math.max(0, ...pageViewports.map(v => v?.width || 0));
+      const availableW = (container.clientWidth || 0) - 40; // approx inner padding
+      const gap = 20;
+      const fitsTwo = maxPageW > 0 && availableW >= (maxPageW * 2 + gap);
+      setEffectiveLayout(fitsTwo ? 'double' : 'single');
+    };
 
-      // Hitta vilken sida som är i mitten av viewport
-      let newCurrentPage = 1;
-      for (let i = 0; i < pageHeights.length; i++) {
-        const pageTop = i === 0 ? 0 : pageHeights[i - 1];
-        const pageBottom = pageHeights[i];
-        
-        if (viewportCenter >= pageTop && viewportCenter < pageBottom) {
-          newCurrentPage = i + 1;
-          break;
+    compute();
+    window.addEventListener('resize', compute);
+    return () => window.removeEventListener('resize', compute);
+  }, [pageLayoutMode, pageViewports, sidebarWidth, zoom]);
+
+  // In "paged" mode: determine whether the current page actually needs vertical scrolling.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const measure = () => {
+      const pageEl = pageContainerRefs.current?.[currentPageRef.current || currentPage];
+      if (!pageEl) {
+        setCanScrollCurrentPage(false);
+        return;
+      }
+      // Allow a tiny slack for sub-pixel rounding
+      setCanScrollCurrentPage(pageEl.offsetHeight > container.clientHeight + 1);
+    };
+
+    const raf = requestAnimationFrame(measure);
+    window.addEventListener('resize', measure);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', measure);
+    };
+  }, [currentPage, zoom, effectiveLayout, navMode, pdfPages.length]);
+
+  // Update currentPage based on scroll position (DOM-based; works for single + double layouts)
+  useEffect(() => {
+    if (!pdfDoc || !containerRef.current) return;
+    const container = containerRef.current;
+    let rafId = null;
+
+    const update = () => {
+      rafId = null;
+      // During PDF reload/restore, don't let scroll-position logic override the intended page.
+      if (suppressPageFromScrollRef.current || pendingViewerScrollRestoreRef.current) return;
+      const centerY = container.scrollTop + container.clientHeight / 2;
+      let bestPage = currentPageRef.current || 1;
+      let bestDist = Infinity;
+
+      for (let p = 1; p <= pdfDoc.numPages; p++) {
+        const el = pageContainerRefs.current[p];
+        if (!el) continue;
+        const pageCenterY = el.offsetTop + el.offsetHeight / 2;
+        const dist = Math.abs(pageCenterY - centerY);
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestPage = p;
         }
       }
 
-      if (newCurrentPage !== currentPage) {
-        setCurrentPage(newCurrentPage);
+      if (bestPage !== currentPageRef.current) {
+        setCurrentPage(bestPage);
       }
     };
 
-    const container = containerRef.current;
-    container.addEventListener('scroll', handleScroll);
-    handleScroll(); // Kör direkt för att sätta initial currentPage
+    const onScroll = () => {
+      if (rafId != null) return;
+      rafId = requestAnimationFrame(update);
+    };
+
+    container.addEventListener('scroll', onScroll, { passive: true });
+    update();
 
     return () => {
-      container.removeEventListener('scroll', handleScroll);
+      container.removeEventListener('scroll', onScroll);
+      if (rafId != null) cancelAnimationFrame(rafId);
     };
-  }, [pageHeights, currentPage]);
+  }, [pdfDoc, pdfPages.length, effectiveLayout, zoom]);
+
+  // After PDF reload operations (rotate/delete/add), restore scroll position within the same page (if requested).
+  useEffect(() => {
+    let cancelled = false;
+
+    const tryRestore = (attempt = 0) => {
+      if (cancelled) return;
+      const pending = pendingViewerScrollRestoreRef.current;
+      if (!pending) return;
+
+      const container = containerRef.current;
+      const pageEl = pageContainerRefs.current?.[pending.pageNum];
+      const canvasEl = canvasRefs.current?.[pending.pageNum];
+      const canvasStyleH = canvasEl?.style?.height ? parseFloat(canvasEl.style.height) : NaN;
+      const canvasReady = Number.isFinite(canvasStyleH) && canvasStyleH > 0;
+
+      if (container && pageEl && canvasEl && canvasReady) {
+        suppressPageFromScrollRef.current = true;
+        const align = pending.align || 'keep';
+        let targetTop = pageEl.offsetTop + (pending.offsetInPage || 0);
+        if (align === 'center') {
+          const containerRect = container.getBoundingClientRect();
+          targetTop = pageEl.offsetTop - containerRect.height / 2 + pageEl.offsetHeight / 2;
+        }
+        container.scrollTo({ top: Math.max(0, targetTop), behavior: 'auto' });
+        // Ensure currentPage matches the restored page
+        if (currentPageRef.current !== pending.pageNum) {
+          currentPageRef.current = pending.pageNum;
+          setCurrentPage(pending.pageNum);
+        }
+        pendingViewerScrollRestoreRef.current = null;
+        // Release suppression on next frame after scroll settles
+        requestAnimationFrame(() => {
+          suppressPageFromScrollRef.current = false;
+        });
+        return;
+      }
+
+      // Wait longer: canvases/refs are rendered with staggered timeouts
+      if (attempt < 240) requestAnimationFrame(() => tryRestore(attempt + 1));
+    };
+
+    tryRestore();
+    return () => { cancelled = true; };
+  }, [pdfDoc, pdfPages.length, pageViewports.length, zoom, effectiveLayout]);
+
+  // Page transition "paged": allow scrolling within the current page, but prevent scrolling into other pages.
+  useEffect(() => {
+    if (navMode !== 'paged') return;
+    const container = containerRef.current;
+    if (!container || !pdfDoc) return;
+
+    const clampToCurrentPage = (nextScrollTop) => {
+      const pageNum = currentPageRef.current || 1;
+      const pageEl = pageContainerRefs.current?.[pageNum];
+      if (!pageEl) return container.scrollTop;
+
+      const pageTop = pageEl.offsetTop;
+      const pageBottom = pageTop + pageEl.offsetHeight;
+      const containerH = container.clientHeight;
+
+      // Normal: allow viewport to move within the page
+      let minScrollTop = pageTop;
+      let maxScrollTop = pageBottom - containerH;
+
+      // If page is shorter than viewport: lock to a centered position
+      if (maxScrollTop < minScrollTop) {
+        const centered = pageTop - (containerH / 2 - pageEl.offsetHeight / 2);
+        minScrollTop = centered;
+        maxScrollTop = centered;
+      }
+
+      return Math.max(minScrollTop, Math.min(maxScrollTop, nextScrollTop));
+    };
+
+    // Snap/clamp immediately when entering paged mode
+    container.scrollTop = clampToCurrentPage(container.scrollTop);
+
+    const onWheel = (e) => {
+      // Allow browser zoom gesture (ctrl+wheel) to pass through
+      if (e.ctrlKey) return;
+      e.preventDefault();
+      const next = clampToCurrentPage(container.scrollTop + e.deltaY);
+      if (next !== container.scrollTop) container.scrollTop = next;
+    };
+
+    let touchStartY = null;
+    const onTouchStart = (e) => {
+      if (!e.touches || e.touches.length !== 1) return;
+      touchStartY = e.touches[0].clientY;
+    };
+    const onTouchMove = (e) => {
+      if (touchStartY == null || !e.touches || e.touches.length !== 1) return;
+      e.preventDefault();
+      const y = e.touches[0].clientY;
+      const deltaY = touchStartY - y;
+      touchStartY = y;
+      const next = clampToCurrentPage(container.scrollTop + deltaY);
+      if (next !== container.scrollTop) container.scrollTop = next;
+    };
+    const onTouchEnd = () => { touchStartY = null; };
+
+    const onScroll = () => {
+      const clamped = clampToCurrentPage(container.scrollTop);
+      if (clamped !== container.scrollTop) container.scrollTop = clamped;
+    };
+
+    container.addEventListener('wheel', onWheel, { passive: false });
+    container.addEventListener('touchstart', onTouchStart, { passive: true });
+    container.addEventListener('touchmove', onTouchMove, { passive: false });
+    container.addEventListener('touchend', onTouchEnd, { passive: true });
+    container.addEventListener('scroll', onScroll, { passive: true });
+
+    return () => {
+      container.removeEventListener('wheel', onWheel);
+      container.removeEventListener('touchstart', onTouchStart);
+      container.removeEventListener('touchmove', onTouchMove);
+      container.removeEventListener('touchend', onTouchEnd);
+      container.removeEventListener('scroll', onScroll);
+    };
+  }, [navMode, pdfDoc]);
+
+  // Close page layout dropdown on outside click / Esc
+  useEffect(() => {
+    if (!showPageLayoutMenu) return;
+    const onMouseDown = (e) => {
+      if (pageLayoutMenuRef.current && !pageLayoutMenuRef.current.contains(e.target)) {
+        setShowPageLayoutMenu(false);
+      }
+    };
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') setShowPageLayoutMenu(false);
+    };
+    document.addEventListener('mousedown', onMouseDown);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [showPageLayoutMenu]);
 
   const handleFileUpload = async (file) => {
     if (!file || file.type !== 'application/pdf') {
@@ -1036,22 +1427,22 @@ export default function App() {
     
     try {
       const data = await loadPDF(file);
-      // Skapa en kopia av ArrayBuffer via Uint8Array innan PDF.js använder den (för att undvika detached ArrayBuffer)
-      // Detta säkerställer att vi har en oberoende kopia som inte kan bli detached
-      const uint8Array = new Uint8Array(data);
-      const dataCopy = uint8Array.slice().buffer; // Skapa en helt ny kopia
-      setPdfData(dataCopy); // Spara kopia av original PDF data
+      // Viktigt: PDF.js kan "detacha" ArrayBuffer när den skickas till worker.
+      // Därför: spara en kopia i state, och ge PDF.js en ANNAN kopia.
+      const stateBytes = new Uint8Array(data).slice();
+      const pdfJsBytes = new Uint8Array(data).slice();
+      setPdfData(stateBytes.buffer.slice(0)); // Spara kopia av original PDF data
       setLoadingMessage(t('loading.parsingPdf', 'Analyserar PDF...'));
-      const loadingTask = pdfjsLib.getDocument({ data: data });
+      const loadingTask = pdfjsLib.getDocument({ data: pdfJsBytes });
       const doc = await loadingTask.promise;
+      const importedTextBoxes = await importExistingPdfText(doc);
       setPdfDoc(doc);
       setCurrentPage(1);
       setPdfPages([]);
       setPageViewports([]);
-      setPageHeights([]);
       canvasRefs.current = {};
       pageContainerRefs.current = {};
-      setTextBoxes([]);
+      setTextBoxes(importedTextBoxes);
       setWhiteoutBoxes([]);
       setPatchBoxes([]);
       setShapeBoxes([]);
@@ -1069,6 +1460,95 @@ export default function App() {
 
   const handleFileSelect = async (file) => {
     await handleFileUpload(file);
+  };
+
+  const handleCreateNewPdf = async () => {
+    setIsLoading(true);
+    setLoadingMessage(t('loading.creatingPdf', 'Skapar ny PDF...'));
+
+    try {
+      // A4 i points (pt): 595.28 x 841.89
+      const doc = await PDFDocument.create();
+      doc.addPage([595.28, 841.89]);
+
+      const pdfBytes = await doc.save();
+
+      // Viktigt: PDF.js kan "detacha" ArrayBuffer när den skickas till worker.
+      // Därför: spara en kopia i state, och ge PDF.js en ANNAN kopia.
+      const stateBytes = new Uint8Array(pdfBytes).slice();
+      const pdfJsBytes = new Uint8Array(pdfBytes).slice();
+
+      setPdfData(stateBytes.buffer.slice(0));
+      setLoadingMessage(t('loading.parsingPdf', 'Analyserar PDF...'));
+      const loadingTask = pdfjsLib.getDocument({ data: pdfJsBytes });
+      const newDoc = await loadingTask.promise;
+
+      setPdfDoc(newDoc);
+      setCurrentPage(1);
+      setPdfPages([]);
+      setPageViewports([]);
+      canvasRefs.current = {};
+      pageContainerRefs.current = {};
+
+      // Nollställ alla overlays
+      setTextBoxes([]);
+      setWhiteoutBoxes([]);
+      setPatchBoxes([]);
+      setShapeBoxes([]);
+      setHighlightStrokes([]);
+      setCommentBoxes([]);
+
+      // Reset tool/selection
+      setTool(null);
+      setSelectedElement(null);
+      setSelectedType(null);
+
+      success(t('success.createdPdf', 'Ny PDF skapad'));
+    } catch (err) {
+      console.error('Fel vid skapande av ny PDF:', err);
+      error(t('errors.createPdfFailed', 'Kunde inte skapa ny PDF') + ': ' + err.message);
+    } finally {
+      setIsLoading(false);
+      setLoadingMessage('');
+    }
+  };
+
+  const handleSelectImageFile = async () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/png,image/jpeg,image/jpg';
+    input.onchange = async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      setIsLoading(true);
+      setLoadingMessage(t('loading.loadingImage', 'Laddar bild...'));
+      try {
+        const dataUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(reader.error || new Error('Kunde inte läsa bildfilen'));
+          reader.readAsDataURL(file);
+        });
+
+        if (typeof dataUrl !== 'string') {
+          throw new Error('Ogiltig bilddata');
+        }
+
+        setPendingImageData(dataUrl);
+        setTool('image');
+        setSelectedElement(null);
+        setSelectedType(null);
+        success(t('success.imageReady', 'Bild laddad - dra för att placera'));
+      } catch (err) {
+        console.error('Fel vid laddning av bild:', err);
+        error(t('errors.imageLoadFailed', 'Kunde inte ladda bild') + ': ' + err.message);
+      } finally {
+        setIsLoading(false);
+        setLoadingMessage('');
+      }
+    };
+    input.click();
   };
 
   // Hjälpfunktion för att beräkna avstånd från en punkt till en linje
@@ -1129,6 +1609,9 @@ export default function App() {
   };
 
   const handleMouseDown = (e) => {
+    // Sätt isMouseDown till true för att spåra om musknappen är nedtryckt
+    setIsMouseDown(true);
+    
     // Om pan-verktyget är aktivt, starta panning
     if (tool === 'pan' && containerRef.current) {
       e.preventDefault();
@@ -1144,7 +1627,15 @@ export default function App() {
 
     // Hitta vilken sida som klickades på
     const clickedPage = findPageFromMousePosition(e);
-    if (!clickedPage || !canvasRefs.current[clickedPage.pageNum]) return;
+    if (!clickedPage || !canvasRefs.current[clickedPage.pageNum]) {
+      // Klick utanför sidorna: avmarkera kommentar och stäng comment-läget
+      if (selectedType === 'comment') {
+        setSelectedElement(null);
+        setSelectedType(null);
+        setTool(null);
+      }
+      return;
+    }
     
     const canvasRef = canvasRefs.current[clickedPage.pageNum];
 
@@ -1160,21 +1651,49 @@ export default function App() {
       setCurrentPage(clickedPage.pageNum);
     }
 
+    // Highlight frihand: starta direkt och hoppa över selektion
+    if (tool === 'highlight' && highlightMode === 'freehand') {
+      setIsDrawing(true);
+      setDrawingPage(clickedPage.pageNum);
+      const startPoint = { x, y };
+      const stroke = {
+        pageIndex: clickedPage.pageNum - 1,
+        color: highlightSettings.color,
+        opacity: highlightSettings.opacity,
+        strokeWidth: highlightSettings.strokeWidth,
+        points: [startPoint]
+      };
+      setCurrentStroke(stroke);
+      return;
+    }
+
+    // Eraser: starta radering (frihand)
+    if (tool === 'eraser') {
+      setIsErasing(true);
+      setDrawingPage(clickedPage.pageNum);
+      setHasErasedThisDrag(false);
+      return;
+    }
+
     // Kontrollera om vi klickade på ett befintligt element
     let clickedElement = null;
     let clickedType = null;
 
     // Kontrollera textBoxes (endast för aktuell sida)
-    const pageTextBoxes = textBoxes.filter(tb => tb.pageIndex === undefined || tb.pageIndex === currentPage - 1);
-    for (let i = pageTextBoxes.length - 1; i >= 0; i--) {
-      const tb = pageTextBoxes[i];
-      const globalIndex = textBoxes.indexOf(tb);
-      const tbRect = rectPtToPx(tb.rect, zoom);
-      if (x >= tbRect.x && x <= tbRect.x + tbRect.width &&
-          y >= tbRect.y && y <= tbRect.y + tbRect.height) {
-        clickedElement = globalIndex;
-        clickedType = 'text';
-        break;
+    // När highlight-verktyget är aktivt ska text inte gå att välja/redigera.
+    const allowTextHitTest = tool === null || tool === 'text' || tool === 'edit-text';
+    if (allowTextHitTest) {
+      const pageTextBoxes = textBoxes.filter(tb => tb.pageIndex === undefined || tb.pageIndex === currentPage - 1);
+      for (let i = pageTextBoxes.length - 1; i >= 0; i--) {
+        const tb = pageTextBoxes[i];
+        const globalIndex = textBoxes.indexOf(tb);
+        const tbRect = rectPtToPx(tb.rect, zoom);
+        if (x >= tbRect.x && x <= tbRect.x + tbRect.width &&
+            y >= tbRect.y && y <= tbRect.y + tbRect.height) {
+          clickedElement = globalIndex;
+          clickedType = 'text';
+          break;
+        }
       }
     }
 
@@ -1228,7 +1747,7 @@ export default function App() {
           const cb = pageCommentBoxes[i];
           const globalIndex = commentBoxes.indexOf(cb);
           const cbRect = rectPtToPx(cb.rect, zoom);
-          // Markören är 20px stor, kontrollera om klick är inom markören
+          // Markören är 24px stor, kontrollera om klick är inom markören
           if (x >= cbRect.x && x <= cbRect.x + cbRect.width &&
               y >= cbRect.y && y <= cbRect.y + cbRect.height) {
             clickedElement = globalIndex;
@@ -1249,6 +1768,7 @@ export default function App() {
           const sb = pageShapeBoxes[i];
           const globalIndex = shapeBoxes.indexOf(sb);
           const isLineOrArrow = (sb.type === 'line' || sb.type === 'arrow') && sb.startPoint && sb.endPoint;
+          const isHighlightRect = sb.type === 'highlight';
           
           let hit = false;
           if (isLineOrArrow) {
@@ -1263,8 +1783,13 @@ export default function App() {
             // För rektanglar/cirklar: ALLTID kontrollera bara om klick är på ramen/bordern
             // Detta gör att man kan skapa textrutor och andra element inuti formerna
             const sbRect = rectPtToPx(sb.rect, zoom);
-            
-            if (sb.type === 'circle') {
+            if (isHighlightRect) {
+              // Highlight-ytor bör vara klickbara över hela ytan
+              if (x >= sbRect.x && x <= sbRect.x + sbRect.width &&
+                  y >= sbRect.y && y <= sbRect.y + sbRect.height) {
+                hit = true;
+              }
+            } else if (sb.type === 'circle') {
               // För cirklar: kontrollera om klick är nära omkretsen
               const centerX = sbRect.x + sbRect.width / 2;
               const centerY = sbRect.y + sbRect.height / 2;
@@ -1292,7 +1817,9 @@ export default function App() {
         if (containerRef.current) {
           scrollPositionRef.current = containerRef.current.scrollTop;
         }
-        if (tool === null || tool !== 'text') {
+        if (tool === null) {
+          setTool('text');
+        } else if (tool !== 'text' && tool !== 'edit-text') {
           setTool('text');
         }
       }
@@ -1333,15 +1860,22 @@ export default function App() {
         if (containerRef.current) {
           scrollPositionRef.current = containerRef.current.scrollTop;
         }
-        if (!wasShapeToolActive) {
+        if (shapeType === 'highlight') {
+          setTool('highlight');
+          shapeToolJustActivated = true;
+        } else if (!wasShapeToolActive) {
           shapeToolJustActivated = true;
           setTool(`shape-${shapeType}`);
         }
       }
       
-      // Om comment är vald, aktivera comment-verktyget om tool === null
+      // Om comment är vald, aktivera comment-verktyget om tool === null eller om tool inte är 'comment'
       // Verktyget förblir aktivt när man klickar på befintliga kommentarer
-      if (clickedType === 'comment' && tool === null) {
+      if (clickedType === 'comment' && tool !== 'comment') {
+        // Spara scroll-position innan vi ändrar tool
+        if (containerRef.current) {
+          scrollPositionRef.current = containerRef.current.scrollTop;
+        }
         setTool('comment');
       }
       
@@ -1349,12 +1883,16 @@ export default function App() {
       setSelectedType(clickedType);
       
       // Om text är vald och inte i edit-läge, starta drag (men inte om det är en resize-handle)
-      if (clickedType === 'text' && !e.target.dataset.resizeHandle && !e.target.closest('textarea')) {
+      if (clickedType === 'text') {
+        if (tool === 'edit-text') {
+          setTextEditTrigger({ index: clickedElement, nonce: Date.now() });
+        } else if (!e.target.dataset.resizeHandle && !e.target.closest('textarea')) {
         const tb = textBoxes[clickedElement];
         const tbRect = rectPtToPx(tb.rect, zoom);
         setIsDragging(true);
         setDragStart({ x, y, startX: tbRect.x, startY: tbRect.y });
         setOriginalRect(tb.rect);
+        }
       }
       
       // Om whiteout är vald, starta drag om whiteout-verktyget är aktivt ELLER om vi just aktiverade det
@@ -1396,12 +1934,42 @@ export default function App() {
         }
       }
       
-      // Om comment är vald, starta drag om comment-verktyget är aktivt
-      if (clickedType === 'comment' && tool === 'comment') {
+      // Om comment är vald, starta drag (fungerar både med och utan comment-verktyget aktivt)
+      // Men inte om användaren klickade på markören för att öppna redigering
+      if (clickedType === 'comment') {
+        // Kontrollera om klicket var på markören (inte på popup:en)
+        const markerElement = e.target.closest('[data-comment-marker]');
+        const isClickingOnMarker = !!markerElement;
         const cb = commentBoxes[clickedElement];
+        if (!cb) return;
+        
+        // Beräkna koordinater relativt till kommentarens egen sida för konsistens
+        const commentPageNum = (cb.pageIndex !== undefined ? cb.pageIndex : 0) + 1;
+        const commentCanvasRef = canvasRefs.current[commentPageNum];
+        if (!commentCanvasRef) return;
+        
+        const commentCanvasRect = commentCanvasRef.getBoundingClientRect();
+        const commentX = e.clientX - commentCanvasRect.left;
+        const commentY = e.clientY - commentCanvasRect.top;
         const cbRect = rectPtToPx(cb.rect, zoom);
+        // Spara exakt offset inom markören för att undvika att markören hoppar vid dragstart
+        const markerRect = markerElement?.getBoundingClientRect();
+        const offsetX = markerRect ? e.clientX - markerRect.left : commentX - cbRect.x;
+        const offsetY = markerRect ? e.clientY - markerRect.top : commentY - cbRect.y;
+        
+        if (isClickingOnMarker) {
+          // Om man klickade på markören, låt CommentBox hantera det (öppna redigering)
+          // Men spara position för att kunna starta drag om användaren drar
+          // Spara drag-start men starta inte drag ännu
+          // Drag startar när användaren faktiskt drar (mousemove)
+          setDragStart({ x: commentX, y: commentY, startX: cbRect.x, startY: cbRect.y, offsetX, offsetY });
+          setOriginalRect(cb.rect);
+          return;
+        }
+        
+        // Om klicket inte var på markören, starta drag direkt
         setIsDragging(true);
-        setDragStart({ x, y, startX: cbRect.x, startY: cbRect.y });
+        setDragStart({ x: commentX, y: commentY, startX: cbRect.x, startY: cbRect.y, offsetX, offsetY });
         setOriginalRect(cb.rect);
       }
       return;
@@ -1448,14 +2016,33 @@ export default function App() {
     }
 
     // För comment-verktyget: skapa kommentar direkt vid klick (om vi inte klickade på en befintlig kommentar)
-    // Kontrollera också att vi inte klickade på en textarea, popup, eller kommentar-markör
+    // Kontrollera också att vi inte klickade på en textarea, popup, kommentars-sidomeny eller kommentar-markör
     const isClickingOnComment = e.target.closest('[data-comment-marker]') || 
                                  e.target.closest('textarea') || 
-                                 e.target.closest('[data-comment-editing]');
+                                 e.target.closest('[data-comment-editing]') ||
+                                 e.target.closest('[data-comment-popup]');
+    const isClickingInCommentSidebar = e.target.closest('[data-comment-sidebar]');
+
+    // Om ett kommentarfält är aktivt (fokus), skapa inte en ny kommentar förrän blur hanterat klart
+    const activeEl = document.activeElement;
+    const isActiveCommentEdit = activeEl && (
+      activeEl.closest('[data-comment-popup]') ||
+      activeEl.closest('textarea')
+    );
     
-    if (tool === 'comment' && clickedElement === null && !isClickingOnComment) {
-      // Markör-storlek i px (20px)
-      const markerSizePx = 20;
+    if (tool === 'comment' && clickedElement === null && !isClickingOnComment && !isActiveCommentEdit) {
+      // Om vi nyss jobbade med en kommentar (vald) eller klickar i sidomenyn: skapa inte ny,
+      // avmarkera och stäng verktyget så att nästa klick inte skapar ny kommentar.
+      if (selectedType === 'comment' || isClickingInCommentSidebar) {
+        if (selectedType === 'comment') {
+          setSelectedElement(null);
+          setSelectedType(null);
+        }
+        setTool(null);
+        return;
+      }
+      // Markör-storlek i px (24px för sticky note)
+      const markerSizePx = 24;
       
       // Skapa kommentar med markör-storlek (använd pxToPt för korrekt konvertering)
       const rectPx = {
@@ -1466,10 +2053,17 @@ export default function App() {
       };
       const rectPt = rectPxToPt(rectPx, zoom);
       
+      // Generera unikt ID för kommentaren
+      const commentId = `comment-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      
       const newCommentBox = {
+        id: commentId,
         rect: rectPt,
         text: '',
-        pageIndex: currentPage - 1
+        replies: [],
+        pageIndex: currentPage - 1,
+        backgroundColor: commentSettings.backgroundColor, // Spara färg
+        icon: commentSettings.icon // Spara ikon-typ
       };
       
       const newCommentBoxes = [...commentBoxes, newCommentBox];
@@ -1477,8 +2071,18 @@ export default function App() {
       const newIndex = commentBoxes.length;
       setSelectedElement(newIndex);
       setSelectedType('comment');
-      setTool(null); // Inaktivera kommentar-verktyget efter att kommentar har skapats
+      // Behåll kommentar-verktyget aktivt så användaren kan lägga till fler kommentarer
       saveToHistory(null, null, null, null, newCommentBoxes);
+      
+      // Öppna redigeringsläge automatiskt för nya kommentarer
+      // Detta görs genom att sätta en flagga som CommentBox kan läsa
+      setTimeout(() => {
+        // Trigger en update så att CommentBox öppnar redigeringsläge
+        const updatedBoxes = [...newCommentBoxes];
+        updatedBoxes[newIndex] = { ...updatedBoxes[newIndex], isNew: true };
+        setCommentBoxes(updatedBoxes);
+      }, 50);
+      
       return;
     }
 
@@ -1515,7 +2119,8 @@ export default function App() {
         fontStyle: textSettings.fontStyle,
         rotation: 0, // Rotation i grader (0-360)
         pageIndex: currentPage - 1,
-        isNew: true // Markera som ny för auto-edit
+        isNew: true, // Markera som ny för auto-edit
+        isDirty: true
       };
       const newTextBoxes = [...textBoxes, newTextBox];
       setTextBoxes(newTextBoxes);
@@ -1582,6 +2187,24 @@ export default function App() {
       setDrawingPage(clickedPage.pageNum);
       return;
     }
+
+    // Bild-verktyg: dra för att placera vald bild
+    if (tool === 'image' && pendingImageData && clickedElement === null) {
+      setIsDrawing(true);
+      setDrawStart({ x, y });
+      setCurrentRect({ x, y, width: 0, height: 0 });
+      setDrawingPage(clickedPage.pageNum);
+      return;
+    }
+
+    // För highlight-ytor (rektangulär)
+    if (tool === 'highlight' && highlightMode === 'rect' && clickedElement === null && selectedType !== 'shape') {
+      setIsDrawing(true);
+      setDrawStart({ x, y });
+      setCurrentRect({ x, y, width: 0, height: 0 });
+      setDrawingPage(clickedPage.pageNum);
+      return;
+    }
     
     // För shape-verktyget, börja rita (endast om verktyget är aktivt, vi inte klickade på en befintlig shape, OCH ingen form är vald)
     // VIKTIGT: Detta måste komma EFTER avmarkeringslogiken så att valda former avmarkeras först
@@ -1623,6 +2246,65 @@ export default function App() {
     const canvasRect = canvasRef.getBoundingClientRect();
     const x = e.clientX - canvasRect.left;
     const y = e.clientY - canvasRect.top;
+
+    // Cursor-preview för frihand highlight / eraser
+    if (tool === 'highlight' && highlightMode === 'freehand') {
+      setHighlightCursor({ pageNum: hoveredPage.pageNum, x, y });
+    } else if (highlightCursor) {
+      setHighlightCursor(null);
+    }
+    if (tool === 'eraser') {
+      setEraserCursor({ pageNum: hoveredPage.pageNum, x, y });
+
+      // Dynamisk färg baserat på omgivande luminans (medelvärde över en liten ruta)
+      const canvasRef = canvasRefs.current[hoveredPage.pageNum];
+      if (canvasRef) {
+        const ctx = canvasRef.getContext('2d');
+        if (ctx) {
+          const radiusPx = Math.max(2, eraserSettings.size / 2);
+          const sampleSize = Math.max(4, Math.min(32, Math.round(radiusPx))); // liten ruta för snabb sampling
+          const half = Math.floor(sampleSize / 2);
+          const sx = Math.min(Math.max(Math.floor(x) - half, 0), Math.max(canvasRef.width - sampleSize, 0));
+          const sy = Math.min(Math.max(Math.floor(y) - half, 0), Math.max(canvasRef.height - sampleSize, 0));
+          try {
+            const imgData = ctx.getImageData(sx, sy, sampleSize, sampleSize).data;
+            let sum = 0;
+            const step = Math.max(1, Math.floor(sampleSize / 6)); // subsampling för prestanda
+            let count = 0;
+            for (let yy = 0; yy < sampleSize; yy += step) {
+              for (let xx = 0; xx < sampleSize; xx += step) {
+                const idx = ((yy * sampleSize) + xx) * 4;
+                const r = imgData[idx];
+                const g = imgData[idx + 1];
+                const b = imgData[idx + 2];
+                sum += 0.299 * r + 0.587 * g + 0.114 * b;
+                count++;
+              }
+            }
+            const avgLum = count > 0 ? sum / count : 255;
+            if (avgLum < 140) {
+              setEraserCursorColor('rgba(255,255,255,0.9)'); // ljus ring på mörk bakgrund
+            } else {
+              setEraserCursorColor('rgba(0,0,0,0.9)'); // mörk ring på ljus bakgrund
+            }
+          } catch (err) {
+            // Fallback: behåll befintlig färg
+          }
+        }
+      }
+    } else if (eraserCursor) {
+      setEraserCursor(null);
+    }
+
+    // Frihand-highlight ritning
+    if (isDrawing && tool === 'highlight' && highlightMode === 'freehand' && currentStroke && drawingPage === hoveredPage.pageNum) {
+      const updatedStroke = {
+        ...currentStroke,
+        points: [...(currentStroke.points || []), { x, y }]
+      };
+      setCurrentStroke(updatedStroke);
+      return;
+    }
 
     // Hantera resize av text
     if (isResizing && resizeHandle && originalRect && originalFontSize !== null && selectedElement !== null && selectedType === 'text') {
@@ -1694,11 +2376,17 @@ export default function App() {
       
       const newRectPt = rectPxToPt(newRectPx, zoom);
       const newBoxes = [...textBoxes];
-      newBoxes[selectedElement] = { 
+      const sampleRectPx = rectPtToPx(tb.originalRect || tb.rect, zoom);
+      const sampledColor = tb.isImported
+        ? (sampleRectAverageColor((tb.pageIndex ?? (currentPage - 1)) + 1, sampleRectPx) || tb.maskColor)
+        : tb.maskColor;
+
+      newBoxes[selectedElement] = markTextBoxDirty(tb, { 
         ...tb, 
         rect: newRectPt,
-        fontSizePt: newFontSizePt
-      };
+        fontSizePt: newFontSizePt,
+        maskColor: sampledColor
+      });
       setTextBoxes(newBoxes);
       
       // Uppdatera också textSettings så att render-logiken använder rätt fontstorlek
@@ -1760,9 +2448,8 @@ export default function App() {
       return;
     }
     
-    // Hantera rotation av text
-    if (isRotating && rotationStart && selectedElement !== null && selectedType === 'text') {
-      const tb = textBoxes[selectedElement];
+    // Hantera rotation av text och whiteout
+    if (isRotating && rotationStart && selectedElement !== null) {
       const { centerX, centerY } = rotationStart;
       
       // Beräkna vinklar från centrum till start- och nuvarande musposition
@@ -1783,12 +2470,74 @@ export default function App() {
       newRotation = newRotation % 360;
       if (newRotation < 0) newRotation += 360;
       
+      if (selectedType === 'text') {
+        const tb = textBoxes[selectedElement];
+        if (!tb) return;
       const newBoxes = [...textBoxes];
-      newBoxes[selectedElement] = { ...tb, rotation: newRotation };
+        const sampleRectPx = rectPtToPx(tb.originalRect || tb.rect, zoom);
+        const sampledColor = tb.isImported
+          ? (sampleRectAverageColor((tb.pageIndex ?? (currentPage - 1)) + 1, sampleRectPx) || tb.maskColor)
+          : tb.maskColor;
+
+        newBoxes[selectedElement] = markTextBoxDirty(tb, { ...tb, rotation: newRotation, maskColor: sampledColor });
       setTextBoxes(newBoxes);
       return;
+      } else if (selectedType === 'whiteout') {
+        const wb = whiteoutBoxes[selectedElement];
+        if (!wb) return;
+        const newBoxes = [...whiteoutBoxes];
+        newBoxes[selectedElement] = { ...wb, rotation: newRotation };
+        setWhiteoutBoxes(newBoxes);
+        return;
+      }
     }
     
+    // Erasing highlights (frihand) - bit-för-bit
+    if (isErasing && tool === 'eraser' && drawingPage === hoveredPage.pageNum) {
+      const radiusPx = eraserSettings.size / 2;
+      const radiusPt = pxToPt(radiusPx, zoom);
+      const erasePt = pointPxToPt({ x, y }, zoom);
+      const newStrokes = [];
+
+      for (const stroke of highlightStrokes) {
+        if (stroke.pageIndex !== (hoveredPage.pageNum - 1)) {
+          newStrokes.push(stroke);
+          continue;
+        }
+
+        const pts = stroke.points || [];
+        const segments = [];
+        let current = [];
+
+        for (const p of pts) {
+          const dx = erasePt.x - p.x;
+          const dy = erasePt.y - p.y;
+          const hit = Math.sqrt(dx * dx + dy * dy) <= radiusPt;
+
+          if (!hit) {
+            current.push(p);
+          } else {
+            if (current.length > 1) segments.push(current);
+            current = [];
+          }
+        }
+        if (current.length > 1) segments.push(current);
+
+        if (segments.length === 1) {
+          newStrokes.push({ ...stroke, points: segments[0] });
+        } else if (segments.length > 1) {
+          segments.forEach((seg) => newStrokes.push({ ...stroke, points: seg }));
+        }
+        // Om inga segment återstår, stroke tas bort
+      }
+
+      if (newStrokes.length !== highlightStrokes.length) {
+        setHighlightStrokes(newStrokes);
+        setHasErasedThisDrag(true);
+      }
+      return;
+    }
+
     // Hantera drag av text
     if (isDragging && dragStart && selectedElement !== null && selectedType === 'text') {
       const tb = textBoxes[selectedElement];
@@ -1804,8 +2553,13 @@ export default function App() {
       };
       
       const newRectPt = rectPxToPt(newRectPx, zoom);
+      const sampleRectPx = rectPtToPx(tb.originalRect || tb.rect, zoom);
+      const sampledColor = tb.isImported
+        ? (sampleRectAverageColor((tb.pageIndex ?? (currentPage - 1)) + 1, sampleRectPx) || tb.maskColor)
+        : tb.maskColor;
+
       const newBoxes = [...textBoxes];
-      newBoxes[selectedElement] = { ...tb, rect: newRectPt };
+      newBoxes[selectedElement] = markTextBoxDirty(tb, { ...tb, rect: newRectPt, maskColor: sampledColor });
       setTextBoxes(newBoxes);
       return;
     }
@@ -1832,24 +2586,49 @@ export default function App() {
     }
     
     // Hantera drag av comment
-    if (isDragging && dragStart && selectedElement !== null && selectedType === 'comment') {
+    // Starta drag om användaren har dragStart, musknappen är nedtryckt och faktiskt drar (rör sig mer än 5px)
+    if (dragStart && isMouseDown && selectedElement !== null && selectedType === 'comment') {
       const cb = commentBoxes[selectedElement];
-      const origRectPx = rectPtToPx(originalRect, zoom);
-      const dx = x - dragStart.x;
-      const dy = y - dragStart.y;
+      if (!cb) return;
       
-      const newRectPx = {
-        x: dragStart.startX + dx,
-        y: dragStart.startY + dy,
-        width: origRectPx.width,
-        height: origRectPx.height
-      };
+      // Beräkna koordinater relativt till kommentarens egen sida för konsistens
+      const commentPageNum = (cb.pageIndex !== undefined ? cb.pageIndex : 0) + 1;
+      const commentCanvasRef = canvasRefs.current[commentPageNum];
+      if (!commentCanvasRef) return;
       
-      const newRectPt = rectPxToPt(newRectPx, zoom);
-      const newBoxes = [...commentBoxes];
-      newBoxes[selectedElement] = { ...cb, rect: newRectPt };
-      setCommentBoxes(newBoxes);
-      return;
+      const commentCanvasRect = commentCanvasRef.getBoundingClientRect();
+      const commentX = e.clientX - commentCanvasRect.left;
+      const commentY = e.clientY - commentCanvasRect.top;
+      
+      const dx = commentX - dragStart.x;
+      const dy = commentY - dragStart.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      
+      // Starta drag om användaren har dragit mer än 5px
+      if (distance > 5 && !isDragging) {
+        setIsDragging(true);
+      }
+      
+      // Om drag är aktivt, uppdatera position
+      if (isDragging || distance > 5) {
+        const origRectPx = rectPtToPx(originalRect, zoom);
+        // Beräkna ny position baserat på ursprungligt offset inom markören,
+        // inte på avrundad modellkoordinat, för att undvika att markören hoppar.
+        const offsetX = dragStart.offsetX ?? (dragStart.x - dragStart.startX);
+        const offsetY = dragStart.offsetY ?? (dragStart.y - dragStart.startY);
+        const newRectPx = {
+          x: commentX - offsetX,
+          y: commentY - offsetY,
+          width: origRectPx.width,
+          height: origRectPx.height
+        };
+        
+        const newRectPt = rectPxToPt(newRectPx, zoom);
+        const newBoxes = [...commentBoxes];
+        newBoxes[selectedElement] = { ...cb, rect: newRectPt };
+        setCommentBoxes(newBoxes);
+        return;
+      }
     }
     
     // Hantera drag av patch
@@ -2035,10 +2814,53 @@ export default function App() {
   };
 
   const handleMouseUp = () => {
+    // Alltid sätt isMouseDown till false när musknappen släpps
+    setIsMouseDown(false);
+    
+    // Rensa dragStart för kommentarer även om drag inte startade
+    // Detta förhindrar att kommentaren följer musen efter klick utan drag
+    if (dragStart && selectedType === 'comment' && !isDragging) {
+      setDragStart(null);
+      setOriginalRect(null);
+    }
+    
     // Stoppa panning
     if (isPanning) {
       setIsPanning(false);
       return;
+    }
+
+    // Avsluta frihand-highlight
+    if (isDrawing && tool === 'highlight' && highlightMode === 'freehand' && currentStroke && currentStroke.points && currentStroke.points.length > 1) {
+      const strokePt = {
+        ...currentStroke,
+        points: currentStroke.points.map((p) => pointPxToPt(p, zoom))
+      };
+      const newStrokes = [...highlightStrokes, strokePt];
+      setHighlightStrokes(newStrokes);
+      saveToHistory(null, null, null, null, null, newStrokes);
+    }
+    setCurrentStroke(null);
+    if (isDrawing && tool === 'highlight' && highlightMode === 'freehand') {
+      setIsDrawing(false);
+      setDrawingPage(null);
+      return;
+    }
+
+    if (isErasing) {
+      if (hasErasedThisDrag) {
+        saveToHistory(null, null, null, null, null, highlightStrokes);
+      }
+      setIsErasing(false);
+      setHasErasedThisDrag(false);
+    }
+
+    // Rensa cursor-preview när musen släpps
+    if (highlightCursor) {
+      setHighlightCursor(null);
+    }
+    if (eraserCursor) {
+      setEraserCursor(null);
     }
 
       // Hantera resize/drag/rotation avslut
@@ -2048,6 +2870,13 @@ export default function App() {
         setRotationStart(null);
         setInitialRotation(0);
         saveToHistory(textBoxes, null, null, null, commentBoxes);
+        return;
+      }
+      if (isRotating && selectedElement !== null && selectedType === 'whiteout') {
+        setIsRotating(false);
+        setRotationStart(null);
+        setInitialRotation(0);
+        saveToHistory(null, whiteoutBoxes, null, null, commentBoxes);
         return;
       }
       if (selectedElement !== null && selectedType === 'whiteout') {
@@ -2126,8 +2955,9 @@ export default function App() {
       return;
     }
 
-    // Kontrollera minsta storlek för att skapa en box (minst 20px i både width och height)
-    const minSize = 20;
+    // Kontrollera minsta storlek för att skapa en box
+    // Highlight area (rect) ska kunna vara liten, övriga verktyg behåller större tröskel.
+    const minSize = (tool === 'highlight' && highlightMode === 'rect') ? 2 : 20;
     if (currentRect.width < minSize || currentRect.height < minSize) {
       // För liten storlek, avbryt utan att skapa något
       setIsDrawing(false);
@@ -2150,7 +2980,8 @@ export default function App() {
         fontWeight: textSettings.fontWeight,
         fontStyle: textSettings.fontStyle,
         pageIndex: drawingPageNum - 1,
-        isNew: true // Markera som ny för auto-edit
+        isNew: true, // Markera som ny för auto-edit
+        isDirty: true
       };
       const newTextBoxes = [...textBoxes, newTextBox];
       setTextBoxes(newTextBoxes);
@@ -2171,19 +3002,53 @@ export default function App() {
       const newWhiteout = {
         rect: rectPt,
         pageIndex: drawingPageNum - 1,
-        color: whiteoutColor
+        color: whiteoutColor,
+        rotation: 0
       };
       const newWhiteoutBoxes = [...whiteoutBoxes, newWhiteout];
       setWhiteoutBoxes(newWhiteoutBoxes);
       setSelectedElement(whiteoutBoxes.length);
       setSelectedType('whiteout');
       saveToHistory(null, newWhiteoutBoxes, null, null, commentBoxes);
+    } else if (tool === 'image' && pendingImageData) {
+      const drawingPageNum = drawingPage || currentPage;
+      const newImagePatch = {
+        targetRect: rectPt,
+        pageIndex: drawingPageNum - 1,
+        imageData: pendingImageData
+      };
+      const newPatchBoxes = [...patchBoxes, newImagePatch];
+      setPatchBoxes(newPatchBoxes);
+      setSelectedElement(patchBoxes.length);
+      setSelectedType('patch');
+      saveToHistory(null, null, newPatchBoxes, null, commentBoxes);
+
+      // Avaktivera bild-verktyget efter placering (redigera är primärt)
+      setTool(null);
+      setPendingImageData(null);
+      success(t('success.imagePlaced', 'Bild placerad'));
     } else if (tool === 'patch' && patchMode === 'select') {
       // Spara sourceRect och växla till place-mode
       const drawingPageNum = drawingPage || currentPage;
       setSourceRect(rectPt);
       setSourcePageIndex(drawingPageNum - 1); // Spara källsidan
       setPatchMode('place');
+    } else if (tool === 'highlight' && highlightMode === 'rect') {
+      const drawingPageNum = drawingPage || currentPage;
+      const newHighlight = {
+        rect: rectPt,
+        pageIndex: drawingPageNum - 1,
+        type: 'highlight',
+        strokeColor: 'transparent',
+        fillColor: highlightSettings.color,
+        opacity: highlightSettings.opacity,
+        strokeWidth: 0
+      };
+      const newShapeBoxes = [...shapeBoxes, newHighlight];
+      setShapeBoxes(newShapeBoxes);
+      setSelectedElement(shapeBoxes.length);
+      setSelectedType('shape');
+      saveToHistory(null, null, null, newShapeBoxes, commentBoxes);
     } else if (tool && tool.startsWith('shape')) {
       // Hitta vilken sida som ritas på
       const drawingPageNum = drawingPage || currentPage;
@@ -2296,6 +3161,18 @@ export default function App() {
     setLoadingMessage(t('loading.rotatingPages', 'Roterar sidor...'));
 
     try {
+      // Preserve viewer position (stay on current page + same intra-page scroll) across the PDF reload.
+      const savedPage = currentPageRef.current || currentPage;
+      const container = containerRef.current;
+      const pageEl = pageContainerRefs.current?.[savedPage];
+      pendingViewerScrollRestoreRef.current = {
+        pageNum: savedPage,
+        offsetInPage: container && pageEl ? (container.scrollTop - pageEl.offsetTop) : 0,
+        // In "paged" mode, prefer centering like scrollToPage to avoid ending up between pages.
+        align: navMode === 'paged' ? 'center' : 'keep'
+      };
+      suppressPageFromScrollRef.current = true;
+
       // Kopiera PDF-data säkert (hantera detached ArrayBuffer)
       let pdfDataCopy;
       try {
@@ -2355,23 +3232,28 @@ export default function App() {
 
       // Spara modifierad PDF
       const modifiedPdfBytes = await pdfLibDoc.save();
-      const modifiedPdfData = modifiedPdfBytes.buffer.slice(0);
+      // Skapa två separata kopior: en för state, en för PDF.js (för att undvika detached ArrayBuffer och raster-fallback)
+      const stateBytes = new Uint8Array(modifiedPdfBytes);
+      const pdfJsBytes = new Uint8Array(modifiedPdfBytes);
 
       // Ladda om med PDF.js
-      const loadingTask = pdfjsLib.getDocument({ data: modifiedPdfData });
+      const loadingTask = pdfjsLib.getDocument({ data: pdfJsBytes });
       const newDoc = await loadingTask.promise;
       
-      setPdfData(modifiedPdfData);
+      setPdfData(stateBytes.buffer.slice(0));
       setPdfDoc(newDoc);
       setPdfPages([]);
       setPageViewports([]);
-      setPageHeights([]);
       canvasRefs.current = {};
       pageContainerRefs.current = {};
       
-      // Uppdatera currentPage om den är utanför gränserna
-      if (currentPage > newDoc.numPages) {
-        setCurrentPage(newDoc.numPages);
+      // Keep current page (unless it is now out of bounds)
+      const keepPage = pendingViewerScrollRestoreRef.current?.pageNum ?? (currentPageRef.current || currentPage);
+      const nextPage = Math.min(Math.max(1, keepPage), newDoc.numPages);
+      currentPageRef.current = nextPage;
+      setCurrentPage(nextPage);
+      if (pendingViewerScrollRestoreRef.current && pendingViewerScrollRestoreRef.current.pageNum !== nextPage) {
+        pendingViewerScrollRestoreRef.current = null;
       }
 
       success(t('success.pagesRotated', { count: pageNumbers.length }, `${pageNumbers.length} sida/sidor roterade`));
@@ -2379,6 +3261,10 @@ export default function App() {
       console.error('Fel vid rotation av sidor:', err);
       error(t('errors.rotateFailed', 'Rotation misslyckades') + ': ' + err.message);
     } finally {
+      // If restore didn't happen (e.g. error), don't permanently suppress.
+      if (!pendingViewerScrollRestoreRef.current) {
+        suppressPageFromScrollRef.current = false;
+      }
       setIsLoading(false);
       setLoadingMessage('');
     }
@@ -2400,7 +3286,7 @@ export default function App() {
       } catch (error) {
         // Om ArrayBuffer är detached, exportera PDF:en för att få en frisk kopia
         console.warn('PDF data är detached, exporterar för att få frisk kopia...');
-        const exportedBytes = await exportPDF(pdfData, textBoxes, whiteoutBoxes, patchBoxes);
+        const exportedBytes = await exportPDF(pdfData, textBoxes, whiteoutBoxes, patchBoxes, shapeBoxes, highlightStrokes);
         pdfDataCopy = exportedBytes.buffer.slice(0);
       }
 
@@ -2492,25 +3378,57 @@ export default function App() {
         return { ...sb, pageIndex: newPageIndex };
       });
 
+      const newCommentBoxes = commentBoxes.filter(cb => {
+        const pageIndex = cb.pageIndex !== undefined ? cb.pageIndex : 0;
+        return !pagesToDelete.has(pageIndex);
+      }).map(cb => {
+        const pageIndex = cb.pageIndex !== undefined ? cb.pageIndex : 0;
+        let newPageIndex = pageIndex;
+        for (const deletedPage of sortedPages) {
+          const deletedIndex = deletedPage - 1;
+          if (pageIndex > deletedIndex) {
+            newPageIndex--;
+          }
+        }
+        return { ...cb, pageIndex: newPageIndex };
+      });
+
+      const newHighlightStrokes = highlightStrokes.filter(st => {
+        const pageIndex = st.pageIndex !== undefined ? st.pageIndex : 0;
+        return !pagesToDelete.has(pageIndex);
+      }).map(st => {
+        const pageIndex = st.pageIndex !== undefined ? st.pageIndex : 0;
+        let newPageIndex = pageIndex;
+        for (const deletedPage of sortedPages) {
+          const deletedIndex = deletedPage - 1;
+          if (pageIndex > deletedIndex) {
+            newPageIndex--;
+          }
+        }
+        return { ...st, pageIndex: newPageIndex };
+      });
+
       // Spara modifierad PDF
       const modifiedPdfBytes = await pdfLibDoc.save();
-      const modifiedPdfData = modifiedPdfBytes.buffer.slice(0);
+      const stateBytes = new Uint8Array(modifiedPdfBytes);
+      const pdfJsBytes = new Uint8Array(modifiedPdfBytes);
 
       // Ladda om med PDF.js
-      const loadingTask = pdfjsLib.getDocument({ data: modifiedPdfData });
+      const loadingTask = pdfjsLib.getDocument({ data: pdfJsBytes });
       const newDoc = await loadingTask.promise;
       
-      setPdfData(modifiedPdfData);
+      setPdfData(stateBytes.buffer.slice(0));
       setPdfDoc(newDoc);
       setPdfPages([]);
       setPageViewports([]);
-      setPageHeights([]);
       canvasRefs.current = {};
       pageContainerRefs.current = {};
       setTextBoxes(newTextBoxes);
       setWhiteoutBoxes(newWhiteoutBoxes);
       setPatchBoxes(newPatchBoxes);
       setShapeBoxes(newShapeBoxes);
+      setCommentBoxes(newCommentBoxes);
+      setHighlightStrokes(newHighlightStrokes);
       
       // Uppdatera currentPage
       const maxPage = Math.max(1, newDoc.numPages);
@@ -2519,12 +3437,256 @@ export default function App() {
       }
 
       // Spara till history
-      saveToHistory(newTextBoxes, newWhiteoutBoxes, newPatchBoxes, newShapeBoxes, commentBoxes);
+      saveToHistory(newTextBoxes, newWhiteoutBoxes, newPatchBoxes, newShapeBoxes, newCommentBoxes, newHighlightStrokes);
 
       success(t('success.pagesDeleted', { count: pageNumbers.length }, `${pageNumbers.length} sida/sidor borttagna`));
     } catch (err) {
       console.error('Fel vid borttagning av sidor:', err);
       error(t('errors.deleteFailed', 'Borttagning misslyckades') + ': ' + err.message);
+    } finally {
+      setIsLoading(false);
+      setLoadingMessage('');
+    }
+  };
+
+  const remapPageIndex = (idx, map) => {
+    const safe = (idx === undefined || idx === null) ? 0 : idx;
+    return map[safe] ?? safe;
+  };
+
+  const handleMovePages = async (pageNumbers, direction) => {
+    if (!pdfDoc || !pdfData || !pageNumbers?.length) return;
+    if (direction !== 'up' && direction !== 'down') return;
+
+    const numPages = pdfDoc.numPages;
+    if (numPages <= 1) return;
+
+    setIsLoading(true);
+    setLoadingMessage(t('loading.movingPages', 'Flyttar sidor...'));
+
+    try {
+      const selectedPositions = new Set(pageNumbers.map(p => p - 1).filter(i => i >= 0 && i < numPages));
+      if (selectedPositions.size === 0) return;
+
+      // Bygg ny ordning (array av gamla index i ny ordning)
+      const order = Array.from({ length: numPages }, (_, i) => i);
+      const posSelected = Array.from({ length: numPages }, (_, i) => selectedPositions.has(i));
+
+      if (direction === 'up') {
+        for (let pos = 1; pos < numPages; pos++) {
+          if (posSelected[pos] && !posSelected[pos - 1]) {
+            // swap pos-1 <-> pos
+            [order[pos - 1], order[pos]] = [order[pos], order[pos - 1]];
+            [posSelected[pos - 1], posSelected[pos]] = [posSelected[pos], posSelected[pos - 1]];
+          }
+        }
+      } else {
+        for (let pos = numPages - 2; pos >= 0; pos--) {
+          if (posSelected[pos] && !posSelected[pos + 1]) {
+            [order[pos + 1], order[pos]] = [order[pos], order[pos + 1]];
+            [posSelected[pos + 1], posSelected[pos]] = [posSelected[pos], posSelected[pos + 1]];
+          }
+        }
+      }
+
+      // Om ordningen inte förändrades, gör inget
+      const isSame = order.every((v, i) => v === i);
+      if (isSame) return;
+
+      // Kopiera PDF-data säkert (hantera detached ArrayBuffer)
+      let pdfDataCopy;
+      try {
+        const uint8Array = new Uint8Array(pdfData);
+        pdfDataCopy = uint8Array.slice().buffer;
+      } catch (error) {
+        console.warn('PDF data är detached, exporterar för att få frisk kopia...');
+        const exportedBytes = await exportPDF(pdfData, textBoxes, whiteoutBoxes, patchBoxes, shapeBoxes, highlightStrokes);
+        pdfDataCopy = exportedBytes.buffer.slice(0);
+      }
+
+      const srcDoc = await PDFDocument.load(pdfDataCopy, {
+        ignoreEncryption: true,
+        updateMetadata: false,
+        parseSpeed: 0
+      });
+      const newPdf = await PDFDocument.create();
+      const copiedPages = await newPdf.copyPages(srcDoc, order);
+      copiedPages.forEach((p) => newPdf.addPage(p));
+
+      const modifiedPdfBytes = await newPdf.save();
+      const stateBytes = new Uint8Array(modifiedPdfBytes);
+      const pdfJsBytes = new Uint8Array(modifiedPdfBytes);
+
+      const loadingTask = pdfjsLib.getDocument({ data: pdfJsBytes });
+      const newDoc = await loadingTask.promise;
+
+      // Remap oldIndex -> newIndex
+      const map = new Array(numPages);
+      for (let newPos = 0; newPos < order.length; newPos++) {
+        map[order[newPos]] = newPos;
+      }
+
+      const newTextBoxes = textBoxes.map(tb => ({ ...tb, pageIndex: remapPageIndex(tb.pageIndex, map) }));
+      const newWhiteoutBoxes = whiteoutBoxes.map(wb => ({ ...wb, pageIndex: remapPageIndex(wb.pageIndex, map) }));
+      const newShapeBoxes = shapeBoxes.map(sb => ({ ...sb, pageIndex: remapPageIndex(sb.pageIndex, map) }));
+      const newCommentBoxes = commentBoxes.map(cb => ({ ...cb, pageIndex: remapPageIndex(cb.pageIndex, map) }));
+      const newHighlightStrokes = highlightStrokes.map(st => ({ ...st, pageIndex: remapPageIndex(st.pageIndex, map) }));
+      const newPatchBoxes = patchBoxes.map(pb => ({
+        ...pb,
+        pageIndex: remapPageIndex(pb.pageIndex, map),
+        sourcePageIndex: remapPageIndex(pb.sourcePageIndex, map)
+      }));
+
+      setPdfData(stateBytes.buffer.slice(0));
+      setPdfDoc(newDoc);
+      setPdfPages([]);
+      setPageViewports([]);
+      canvasRefs.current = {};
+      pageContainerRefs.current = {};
+
+      setTextBoxes(newTextBoxes);
+      setWhiteoutBoxes(newWhiteoutBoxes);
+      setPatchBoxes(newPatchBoxes);
+      setShapeBoxes(newShapeBoxes);
+      setCommentBoxes(newCommentBoxes);
+      setHighlightStrokes(newHighlightStrokes);
+
+      // Behåll samma "innehållssida" i fokus
+      const oldCurrent = (currentPageRef.current || currentPage) - 1;
+      const newCurrent = (map[oldCurrent] ?? 0) + 1;
+      currentPageRef.current = newCurrent;
+      setCurrentPage(newCurrent);
+
+      saveToHistory(newTextBoxes, newWhiteoutBoxes, newPatchBoxes, newShapeBoxes, newCommentBoxes, newHighlightStrokes);
+      success(t('success.pagesMoved', 'Sidor flyttade'));
+    } catch (err) {
+      console.error('Fel vid flytt av sidor:', err);
+      error(t('errors.movePagesFailed', 'Flytt av sidor misslyckades') + ': ' + err.message);
+    } finally {
+      setIsLoading(false);
+      setLoadingMessage('');
+    }
+  };
+
+  const handleDuplicatePages = async (pageNumbers) => {
+    if (!pdfDoc || !pdfData || !pageNumbers?.length) return;
+
+    const numPages = pdfDoc.numPages;
+    setIsLoading(true);
+    setLoadingMessage(t('loading.duplicatingPages', 'Duplicerar sidor...'));
+
+    try {
+      const selected = new Set(pageNumbers.map(p => p - 1).filter(i => i >= 0 && i < numPages));
+      if (selected.size === 0) return;
+
+      // Ny ordning: lägg in duplikat direkt efter original
+      const order = [];
+      const originalNewIndex = new Array(numPages);
+      const duplicateNewIndex = new Array(numPages).fill(null);
+      for (let old = 0; old < numPages; old++) {
+        originalNewIndex[old] = order.length;
+        order.push(old);
+        if (selected.has(old)) {
+          duplicateNewIndex[old] = order.length;
+          order.push(old);
+        }
+      }
+
+      // Kopiera PDF-data säkert (hantera detached ArrayBuffer)
+      let pdfDataCopy;
+      try {
+        const uint8Array = new Uint8Array(pdfData);
+        pdfDataCopy = uint8Array.slice().buffer;
+      } catch (error) {
+        console.warn('PDF data är detached, exporterar för att få frisk kopia...');
+        const exportedBytes = await exportPDF(pdfData, textBoxes, whiteoutBoxes, patchBoxes, shapeBoxes, highlightStrokes);
+        pdfDataCopy = exportedBytes.buffer.slice(0);
+      }
+
+      const srcDoc = await PDFDocument.load(pdfDataCopy, {
+        ignoreEncryption: true,
+        updateMetadata: false,
+        parseSpeed: 0
+      });
+      const newPdf = await PDFDocument.create();
+      const copiedPages = await newPdf.copyPages(srcDoc, order);
+      copiedPages.forEach((p) => newPdf.addPage(p));
+
+      const modifiedPdfBytes = await newPdf.save();
+      const stateBytes = new Uint8Array(modifiedPdfBytes);
+      const pdfJsBytes = new Uint8Array(modifiedPdfBytes);
+
+      const loadingTask = pdfjsLib.getDocument({ data: pdfJsBytes });
+      const newDoc = await loadingTask.promise;
+
+      const mapOrig = (idx) => originalNewIndex[(idx === undefined || idx === null) ? 0 : idx];
+      const mapDup = (idx) => duplicateNewIndex[(idx === undefined || idx === null) ? 0 : idx];
+
+      // Remappa original
+      const remapOriginal = (arr, key = 'pageIndex') => arr.map(item => ({ ...item, [key]: mapOrig(item[key]) }));
+      const newTextBoxes = remapOriginal(textBoxes, 'pageIndex');
+      const newWhiteoutBoxes = remapOriginal(whiteoutBoxes, 'pageIndex');
+      const newShapeBoxes = remapOriginal(shapeBoxes, 'pageIndex');
+      const newCommentBoxes = remapOriginal(commentBoxes, 'pageIndex');
+      const newHighlightStrokes = remapOriginal(highlightStrokes, 'pageIndex');
+      const newPatchBoxes = patchBoxes.map(pb => ({
+        ...pb,
+        pageIndex: mapOrig(pb.pageIndex),
+        sourcePageIndex: mapOrig(pb.sourcePageIndex)
+      }));
+
+      // Klona för duplicerade sidor
+      const extraText = textBoxes
+        .filter(tb => selected.has((tb.pageIndex ?? 0)))
+        .map(tb => ({ ...JSON.parse(JSON.stringify(tb)), pageIndex: mapDup(tb.pageIndex) }));
+      const extraWhiteout = whiteoutBoxes
+        .filter(wb => selected.has((wb.pageIndex ?? 0)))
+        .map(wb => ({ ...JSON.parse(JSON.stringify(wb)), pageIndex: mapDup(wb.pageIndex) }));
+      const extraShapes = shapeBoxes
+        .filter(sb => selected.has((sb.pageIndex ?? 0)))
+        .map(sb => ({ ...JSON.parse(JSON.stringify(sb)), pageIndex: mapDup(sb.pageIndex) }));
+      const extraComments = commentBoxes
+        .filter(cb => selected.has((cb.pageIndex ?? 0)))
+        .map(cb => ({ ...JSON.parse(JSON.stringify(cb)), pageIndex: mapDup(cb.pageIndex) }));
+      const extraStrokes = highlightStrokes
+        .filter(st => selected.has((st.pageIndex ?? 0)))
+        .map(st => ({ ...JSON.parse(JSON.stringify(st)), pageIndex: mapDup(st.pageIndex) }));
+      const extraPatches = patchBoxes
+        .filter(pb => selected.has((pb.pageIndex ?? 0)))
+        .map(pb => {
+          const clone = JSON.parse(JSON.stringify(pb));
+          clone.pageIndex = mapDup(pb.pageIndex);
+          const srcOld = (pb.sourcePageIndex ?? 0);
+          clone.sourcePageIndex = selected.has(srcOld) ? mapDup(srcOld) : mapOrig(srcOld);
+          return clone;
+        });
+
+      const finalTextBoxes = [...newTextBoxes, ...extraText];
+      const finalWhiteoutBoxes = [...newWhiteoutBoxes, ...extraWhiteout];
+      const finalShapeBoxes = [...newShapeBoxes, ...extraShapes];
+      const finalCommentBoxes = [...newCommentBoxes, ...extraComments];
+      const finalHighlightStrokes = [...newHighlightStrokes, ...extraStrokes];
+      const finalPatchBoxes = [...newPatchBoxes, ...extraPatches];
+
+      setPdfData(stateBytes.buffer.slice(0));
+      setPdfDoc(newDoc);
+      setPdfPages([]);
+      setPageViewports([]);
+      canvasRefs.current = {};
+      pageContainerRefs.current = {};
+
+      setTextBoxes(finalTextBoxes);
+      setWhiteoutBoxes(finalWhiteoutBoxes);
+      setPatchBoxes(finalPatchBoxes);
+      setShapeBoxes(finalShapeBoxes);
+      setCommentBoxes(finalCommentBoxes);
+      setHighlightStrokes(finalHighlightStrokes);
+
+      saveToHistory(finalTextBoxes, finalWhiteoutBoxes, finalPatchBoxes, finalShapeBoxes, finalCommentBoxes, finalHighlightStrokes);
+      success(t('success.pagesDuplicated', 'Sidor duplicerade'));
+    } catch (err) {
+      console.error('Fel vid duplicering av sidor:', err);
+      error(t('errors.duplicatePagesFailed', 'Duplicering misslyckades') + ': ' + err.message);
     } finally {
       setIsLoading(false);
       setLoadingMessage('');
@@ -2580,17 +3742,17 @@ export default function App() {
 
       // Spara modifierad PDF
       const modifiedPdfBytes = await pdfLibDoc.save();
-      const modifiedPdfData = modifiedPdfBytes.buffer.slice(0);
+      const stateBytes = new Uint8Array(modifiedPdfBytes);
+      const pdfJsBytes = new Uint8Array(modifiedPdfBytes);
 
       // Ladda om med PDF.js
-      const loadingTask = pdfjsLib.getDocument({ data: modifiedPdfData });
+      const loadingTask = pdfjsLib.getDocument({ data: pdfJsBytes });
       const newDoc = await loadingTask.promise;
       
-      setPdfData(modifiedPdfData);
+      setPdfData(stateBytes.buffer.slice(0));
       setPdfDoc(newDoc);
       setPdfPages([]);
       setPageViewports([]);
-      setPageHeights([]);
       canvasRefs.current = {};
       pageContainerRefs.current = {};
 
@@ -2614,7 +3776,7 @@ export default function App() {
     setLoadingMessage(t('loading.exporting', 'Exporterar PDF...'));
     
     try {
-      const exported = await exportPDF(pdfData, textBoxes, whiteoutBoxes, patchBoxes);
+      const exported = await exportPDF(pdfData, textBoxes, whiteoutBoxes, patchBoxes, shapeBoxes, highlightStrokes);
       const blob = new Blob([exported], { type: 'application/pdf' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -2648,7 +3810,7 @@ export default function App() {
       
       switch (format) {
         case 'pdf':
-          result = await exportAsPDF(pdfData, textBoxes, whiteoutBoxes, patchBoxes);
+          result = await exportAsPDF(pdfData, textBoxes, whiteoutBoxes, patchBoxes, shapeBoxes, highlightStrokes);
           const url = URL.createObjectURL(result.blob);
           const a = document.createElement('a');
           a.href = url;
@@ -2729,7 +3891,7 @@ export default function App() {
 
   // Visa landing page om ingen PDF är laddad
   if (!pdfDoc) {
-    return <LandingPage onFileSelect={handleFileSelect} />;
+    return <LandingPage onFileSelect={handleFileSelect} onCreateNew={handleCreateNewPdf} />;
   }
 
   return (
@@ -2807,6 +3969,40 @@ export default function App() {
           }}
         >
           {t('toolbar.addText')}
+        </button>
+        
+        <button
+          onClick={() => {
+            if (tool === 'edit-text') {
+              setTool(null);
+              setHoveredTextBoxIndex(null);
+            } else {
+              setTool('edit-text');
+              setSelectedElement(null);
+              setSelectedType(null);
+            }
+          }}
+          style={{
+            padding: '8px 16px',
+            backgroundColor: tool === 'edit-text' ? '#ff6b35' : '#333',
+            color: '#fff',
+            border: tool === 'edit-text' ? '1px solid #ff6b35' : '1px solid #555',
+            cursor: 'pointer',
+            borderRadius: '5px',
+            transition: 'all 0.2s ease'
+          }}
+          onMouseEnter={(e) => {
+            if (tool !== 'edit-text') {
+              e.currentTarget.style.backgroundColor = '#444';
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (tool !== 'edit-text') {
+              e.currentTarget.style.backgroundColor = '#333';
+            }
+          }}
+        >
+          {t('toolbar.editText', 'Redigera text')}
         </button>
         
         <button
@@ -2925,6 +4121,63 @@ export default function App() {
         >
           {t('toolbar.copyArea')} {patchMode === 'select' ? t('toolbar.selectArea') : t('toolbar.place')}
         </button>
+
+        <button
+          onClick={() => {
+            // Växla verktyget av/on
+            if (tool === 'image') {
+              setTool(null);
+              setPendingImageData(null);
+              return;
+            }
+            handleSelectImageFile();
+          }}
+          style={{
+            padding: '8px 16px',
+            backgroundColor: tool === 'image' ? '#ff6b35' : '#333',
+            color: '#fff',
+            border: tool === 'image' ? '1px solid #ff6b35' : '1px solid #555',
+            cursor: 'pointer',
+            borderRadius: '5px',
+            transition: 'all 0.2s ease'
+          }}
+          onMouseEnter={(e) => {
+            if (tool !== 'image') {
+              e.currentTarget.style.backgroundColor = '#444';
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (tool !== 'image') {
+              e.currentTarget.style.backgroundColor = '#333';
+            }
+          }}
+          title={pendingImageData ? t('toolbar.imageReady', 'Dra för att placera bilden') : t('toolbar.imageHint', 'Välj en bild (PNG/JPG) och placera på sidan')}
+        >
+          {t('toolbar.image', 'Bild')}
+        </button>
+
+        {/* Highlight verktyg */}
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+          <button
+            onClick={() => {
+              const next = tool === 'highlight' ? null : 'highlight';
+              setTool(next);
+              if (next) setHighlightMode('rect');
+            }}
+            style={{
+              padding: '8px 12px',
+              backgroundColor: tool === 'highlight' ? '#ff6b35' : '#333',
+              color: '#fff',
+              border: tool === 'highlight' ? '1px solid #ff6b35' : '1px solid #555',
+              cursor: 'pointer',
+              borderRadius: '5px',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            {t('toolbar.highlightRect', 'Highlight')}
+          </button>
+          {/* Övriga highlight-inställningar flyttas till highlight-sidebar */}
+        </div>
 
         {/* Shape Tools - Dropdown */}
         <div style={{ position: 'relative', display: 'inline-block' }} data-shape-type-dropdown>
@@ -3059,6 +4312,38 @@ export default function App() {
           {t('toolbar.pan')}
         </button>
 
+        {/* Eraser tool */}
+        <button
+          onClick={() => {
+            if (tool === 'eraser') {
+              setTool(null);
+            } else {
+              setTool('eraser');
+            }
+          }}
+          style={{
+            padding: '8px 16px',
+            backgroundColor: tool === 'eraser' ? '#ff6b35' : '#333',
+            color: '#fff',
+            border: tool === 'eraser' ? '1px solid #ff6b35' : '1px solid #555',
+            cursor: 'pointer',
+            borderRadius: '5px',
+            transition: 'all 0.2s ease'
+          }}
+          onMouseEnter={(e) => {
+            if (tool !== 'eraser') {
+              e.currentTarget.style.backgroundColor = '#444';
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (tool !== 'eraser') {
+              e.currentTarget.style.backgroundColor = '#333';
+            }
+          }}
+        >
+          {t('toolbar.eraser', 'Eraser')}
+        </button>
+
         {selectedElement !== null && (
           <button
             onClick={handleDelete}
@@ -3141,6 +4426,211 @@ export default function App() {
         </div>
 
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '10px', alignItems: 'center', color: '#fff' }}>
+          {/* Page layout dropdown */}
+          {pdfDoc && (
+            <div ref={pageLayoutMenuRef} style={{ position: 'relative' }}>
+              <button
+                onClick={() => setShowPageLayoutMenu(v => !v)}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: showPageLayoutMenu ? '#5a6268' : '#6c757d',
+                  color: '#fff',
+                  border: 'none',
+                  cursor: 'pointer',
+                  borderRadius: '5px',
+                  fontWeight: '600',
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseEnter={(e) => {
+                  if (!showPageLayoutMenu) {
+                    e.currentTarget.style.backgroundColor = '#5a6268';
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!showPageLayoutMenu) {
+                    e.currentTarget.style.backgroundColor = '#6c757d';
+                    e.currentTarget.style.transform = 'translateY(0)';
+                  }
+                }}
+                title={t('toolbar.pageLayout', 'Sidlayout')}
+              >
+                {t('toolbar.pageLayout', 'Sidlayout')}
+              </button>
+
+              {showPageLayoutMenu && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: '44px',
+                    right: 0,
+                    width: '320px',
+                    backgroundColor: '#ffffff',
+                    borderRadius: '10px',
+                    boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
+                    overflow: 'hidden',
+                    zIndex: 2000
+                  }}
+                >
+                  <div style={{ padding: '14px 14px 10px 14px', borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
+                    <div style={{ fontSize: '13px', fontWeight: 700, color: '#333' }}>
+                      {t('toolbar.pageLayout', 'Sidlayout')}
+                    </div>
+                  </div>
+
+                  {/* Page Mode */}
+                  <div style={{ padding: '12px 14px', borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
+                    <div style={{ fontSize: '12px', fontWeight: 700, color: '#666', marginBottom: '10px' }}>
+                      {t('toolbar.pageMode', 'Sidläge')}
+                    </div>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      <button
+                        onClick={() => setPageLayoutMode('single')}
+                        style={{
+                          flex: 1,
+                          padding: '10px 10px',
+                          borderRadius: '8px',
+                          border: pageLayoutMode === 'single' ? '2px solid #0066ff' : '1px solid #ddd',
+                          backgroundColor: pageLayoutMode === 'single' ? 'rgba(0,102,255,0.08)' : '#fff',
+                          cursor: 'pointer'
+                        }}
+                        title={t('toolbar.layoutSingle', 'En sida')}
+                      >
+                        <div style={{ width: '34px', height: '26px', margin: '0 auto 8px auto', borderRadius: '4px', border: '2px solid #2a2a2a' }} />
+                        <div style={{ fontSize: '12px', fontWeight: 700, color: '#333' }}>{t('toolbar.layoutSingle', 'En sida')}</div>
+                      </button>
+
+                      <button
+                        onClick={() => setPageLayoutMode('double')}
+                        style={{
+                          flex: 1,
+                          padding: '10px 10px',
+                          borderRadius: '8px',
+                          border: pageLayoutMode === 'double' ? '2px solid #0066ff' : '1px solid #ddd',
+                          backgroundColor: pageLayoutMode === 'double' ? 'rgba(0,102,255,0.08)' : '#fff',
+                          cursor: 'pointer'
+                        }}
+                        title={t('toolbar.layoutDouble', 'Två sidor')}
+                      >
+                        <div style={{ display: 'flex', gap: '6px', width: '74px', margin: '0 auto 8px auto' }}>
+                          <div style={{ flex: 1, height: '26px', borderRadius: '4px', border: '2px solid #2a2a2a' }} />
+                          <div style={{ flex: 1, height: '26px', borderRadius: '4px', border: '2px solid #2a2a2a' }} />
+                        </div>
+                        <div style={{ fontSize: '12px', fontWeight: 700, color: '#333' }}>{t('toolbar.layoutDouble', 'Två sidor')}</div>
+                      </button>
+
+                      <button
+                        onClick={() => setPageLayoutMode('auto')}
+                        style={{
+                          flex: 1,
+                          padding: '10px 10px',
+                          borderRadius: '8px',
+                          border: pageLayoutMode === 'auto' ? '2px solid #0066ff' : '1px solid #ddd',
+                          backgroundColor: pageLayoutMode === 'auto' ? 'rgba(0,102,255,0.08)' : '#fff',
+                          cursor: 'pointer'
+                        }}
+                        title={t('toolbar.layoutAuto', 'Auto')}
+                      >
+                        <div style={{ width: '34px', height: '26px', margin: '0 auto 8px auto', borderRadius: '4px', border: '2px dashed #2a2a2a' }} />
+                        <div style={{ fontSize: '12px', fontWeight: 700, color: '#333' }}>{t('toolbar.layoutAuto', 'Auto')}</div>
+                      </button>
+                    </div>
+
+                    {pageLayoutMode === 'auto' && (
+                      <div style={{ marginTop: '10px', fontSize: '11px', color: '#666' }}>
+                        {t('toolbar.layoutAutoHint', 'Auto växlar mellan en/två sidor beroende på bredd.')}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Page Transition */}
+                  <div style={{ padding: '12px 14px', borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
+                    <div style={{ fontSize: '12px', fontWeight: 700, color: '#666', marginBottom: '10px' }}>
+                      {t('toolbar.pageTransition', 'Sidövergång')}
+                    </div>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      <button
+                        onClick={() => setNavMode('scroll')}
+                        style={{
+                          flex: 1,
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          border: navMode === 'scroll' ? '2px solid #0066ff' : '1px solid #ddd',
+                          backgroundColor: navMode === 'scroll' ? 'rgba(0,102,255,0.08)' : '#fff',
+                          cursor: 'pointer',
+                          fontWeight: 700,
+                          fontSize: '12px',
+                          color: '#333'
+                        }}
+                      >
+                        {t('toolbar.navScroll', 'Scroll')}
+                      </button>
+                      <button
+                        onClick={() => setNavMode('paged')}
+                        style={{
+                          flex: 1,
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          border: navMode === 'paged' ? '2px solid #0066ff' : '1px solid #ddd',
+                          backgroundColor: navMode === 'paged' ? 'rgba(0,102,255,0.08)' : '#fff',
+                          cursor: 'pointer',
+                          fontWeight: 700,
+                          fontSize: '12px',
+                          color: '#333'
+                        }}
+                      >
+                        {t('toolbar.navPaged', 'Sida')}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Page Rotation */}
+                  <div style={{ padding: '12px 14px' }}>
+                    <div style={{ fontSize: '12px', fontWeight: 700, color: '#666', marginBottom: '10px' }}>
+                      {t('toolbar.pageRotation', 'Sidrotation')}
+                    </div>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      <button
+                        onClick={() => handleRotatePages([currentPage], 270)}
+                        style={{
+                          flex: 1,
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          border: '1px solid #ddd',
+                          backgroundColor: '#fff',
+                          cursor: 'pointer',
+                          fontWeight: 700,
+                          fontSize: '12px',
+                          color: '#333'
+                        }}
+                        title={t('toolbar.rotateLeft', 'Rotera vänster')}
+                      >
+                        ⟲ {t('toolbar.rotateLeft', 'Rotera vänster')}
+                      </button>
+                      <button
+                        onClick={() => handleRotatePages([currentPage], 90)}
+                        style={{
+                          flex: 1,
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          border: '1px solid #ddd',
+                          backgroundColor: '#fff',
+                          cursor: 'pointer',
+                          fontWeight: 700,
+                          fontSize: '12px',
+                          color: '#333'
+                        }}
+                        title={t('toolbar.rotateRight', 'Rotera höger')}
+                      >
+                        ⟳ {t('toolbar.rotateRight', 'Rotera höger')}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Language Switcher */}
           <select
             value={i18n.language}
@@ -3183,6 +4673,7 @@ export default function App() {
               <button
                 onClick={() => {
                   const newPage = Math.max(1, currentPage - 1);
+                  currentPageRef.current = newPage;
                   setCurrentPage(newPage);
                   // Scrolla till sidan
                   scrollToPage(newPage);
@@ -3204,6 +4695,7 @@ export default function App() {
               <button
                 onClick={() => {
                   const newPage = Math.min(pdfDoc.numPages, currentPage + 1);
+                  currentPageRef.current = newPage;
                   setCurrentPage(newPage);
                   // Scrolla till sidan
                   scrollToPage(newPage);
@@ -3292,6 +4784,7 @@ export default function App() {
             pdfDoc={pdfDoc}
             currentPage={currentPage}
             onPageSelect={(pageNum) => {
+              currentPageRef.current = pageNum;
               setCurrentPage(pageNum);
               scrollToPage(pageNum);
             }}
@@ -3302,14 +4795,14 @@ export default function App() {
         )}
         
         {/* Text Settings Sidebar - Använd position absolute så den inte påverkar layouten */}
-        {tool === 'text' && (
+        {(tool === 'text' || tool === 'edit-text') && (
           <div
             style={{
               position: 'absolute',
               top: 0, // Direkt vid kanten där verktygsfältet börjar
               left: pdfDoc ? `${sidebarWidth}px` : '0', // Börja efter thumbnail sidebar
               right: '17px', // Lämna utrymme för scrollbaren (vanligtvis 15-17px)
-              zIndex: 10,
+              zIndex: 40,
               backgroundColor: '#2a2a2a',
               borderBottom: '1px solid #444',
               padding: '15px 20px',
@@ -3629,6 +5122,669 @@ export default function App() {
           </div>
         </div>
       )}
+
+        {/* Comment Settings Sidebar - Visas när comment-verktyget är aktivt */}
+        {tool === 'comment' && (
+          <div
+            data-comment-sidebar
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: pdfDoc ? `${sidebarWidth}px` : '0',
+              right: '17px',
+              zIndex: 50,
+              backgroundColor: '#2a2a2a',
+              borderBottom: '1px solid #444',
+              padding: '15px 20px',
+              display: 'flex',
+              gap: '20px',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              animation: 'slideDown 0.3s ease-out',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+            }}
+          >
+            <style>{`
+              @keyframes slideDown {
+                from {
+                  opacity: 0;
+                  transform: translateY(-10px);
+                }
+                to {
+                  opacity: 1;
+                  transform: translateY(0);
+                }
+              }
+            `}</style>
+
+            {/* Delete comment button */}
+            <button
+              onClick={() => {
+                if (selectedElement !== null && selectedType === 'comment') {
+                  const confirmed = window.confirm(t('commentSidebar.confirmDelete', 'Vill du ta bort kommentaren?'));
+                  if (confirmed) {
+                    handleDelete();
+                    setTool(null); // stäng comment-läget när kommentaren tas bort via sidomenyn
+                  }
+                }
+              }}
+              disabled={selectedElement === null || selectedType !== 'comment'}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                padding: '10px 14px',
+                backgroundColor: '#c0392b',
+                color: '#fff',
+                border: '1px solid #a93226',
+                borderRadius: '6px',
+                cursor: selectedElement !== null && selectedType === 'comment' ? 'pointer' : 'not-allowed',
+                opacity: selectedElement !== null && selectedType === 'comment' ? 1 : 0.5,
+                minWidth: '44px',
+                height: '42px',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.25)'
+              }}
+              title={t('commentSidebar.delete', 'Ta bort kommentar')}
+            >
+              🗑️
+            </button>
+
+            {/* Comment Color */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', position: 'relative' }}>
+              <label htmlFor="comment-color-picker" style={{ color: '#fff', fontSize: '0.9rem', fontWeight: '500', minWidth: '80px' }}>
+                {t('commentSidebar.color')}:
+              </label>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', position: 'relative' }}>
+                <div style={{ position: 'relative' }} data-comment-color-picker>
+                  <button
+                    onClick={() => setShowCommentColorPalette(!showCommentColorPalette)}
+                    style={{
+                      width: '50px',
+                      height: '35px',
+                      border: '2px solid #555',
+                      borderRadius: '5px',
+                      cursor: 'pointer',
+                      backgroundColor: commentSettings.backgroundColor,
+                      transition: 'all 0.2s ease',
+                      boxShadow: showCommentColorPalette ? '0 0 0 2px rgba(255, 107, 53, 0.5)' : 'none'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = '#888';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = '#555';
+                    }}
+                    title={t('commentSidebar.color')}
+                  />
+                  {/* Dropdown med färger */}
+                  {showCommentColorPalette && (
+                    <div
+                      data-comment-color-picker
+                      style={{
+                        position: 'absolute',
+                        top: '45px',
+                        left: '0',
+                        backgroundColor: '#2a2a2a',
+                        border: '1px solid #555',
+                        borderRadius: '8px',
+                        padding: '12px',
+                        zIndex: 1000,
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: '8px',
+                        width: '200px'
+                      }}
+                    >
+                      {[
+                        { color: '#FFF59D', name: 'Gul' },
+                        { color: '#FFA870', name: 'Orange' },
+                        { color: '#FF7A7A', name: 'Röd' },
+                        { color: '#FF8AF5', name: 'Magenta' },
+                        { color: '#7AA8FF', name: 'Blå' },
+                        { color: '#7DFFA3', name: 'Lime grön' }
+                      ].map((colorOption) => (
+                        <button
+                          key={colorOption.color}
+                          onClick={() => {
+                            setCommentSettings({ ...commentSettings, backgroundColor: colorOption.color });
+                            setShowCommentColorPalette(false);
+                            // Uppdatera även vald kommentar om en är markerad
+                            if (selectedElement !== null && selectedType === 'comment') {
+                              const newBoxes = [...commentBoxes];
+                              newBoxes[selectedElement] = { 
+                                ...newBoxes[selectedElement], 
+                                backgroundColor: colorOption.color 
+                              };
+                              setCommentBoxes(newBoxes);
+                              saveToHistory(null, null, null, null, newBoxes);
+                            }
+                          }}
+                          title={colorOption.name}
+                          style={{
+                            width: '32px',
+                            height: '32px',
+                            backgroundColor: colorOption.color,
+                            border: commentSettings.backgroundColor.toLowerCase() === colorOption.color.toLowerCase() 
+                              ? '3px solid #ff6b35' 
+                              : '2px solid #555',
+                            borderRadius: '5px',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease',
+                            boxShadow: commentSettings.backgroundColor.toLowerCase() === colorOption.color.toLowerCase()
+                              ? '0 0 0 2px rgba(255, 107, 53, 0.3)'
+                              : 'none'
+                          }}
+                          onMouseEnter={(e) => {
+                            if (commentSettings.backgroundColor.toLowerCase() !== colorOption.color.toLowerCase()) {
+                              e.currentTarget.style.transform = 'scale(1.1)';
+                              e.currentTarget.style.borderColor = '#888';
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (commentSettings.backgroundColor.toLowerCase() !== colorOption.color.toLowerCase()) {
+                              e.currentTarget.style.transform = 'scale(1)';
+                              e.currentTarget.style.borderColor = '#555';
+                            }
+                          }}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <input
+                  id="comment-color-picker"
+                  name="comment-color"
+                  type="color"
+                  value={commentSettings.backgroundColor}
+                  onChange={(e) => {
+                    const newColor = e.target.value;
+                    setCommentSettings({ ...commentSettings, backgroundColor: newColor });
+                    // Uppdatera även vald kommentar om en är markerad
+                    if (selectedElement !== null && selectedType === 'comment') {
+                      const newBoxes = [...commentBoxes];
+                      newBoxes[selectedElement] = { ...newBoxes[selectedElement], backgroundColor: newColor };
+                      setCommentBoxes(newBoxes);
+                      saveToHistory(null, null, null, null, newBoxes);
+                    }
+                  }}
+                  style={{
+                    width: '50px',
+                    height: '35px',
+                    border: '1px solid #555',
+                    borderRadius: '5px',
+                    cursor: 'pointer',
+                    backgroundColor: '#333'
+                  }}
+                />
+                <input
+                  id="comment-color-text"
+                  name="comment-color-hex"
+                  type="text"
+                  value={commentSettings.backgroundColor}
+                  onChange={(e) => {
+                    const newColor = e.target.value;
+                    setCommentSettings({ ...commentSettings, backgroundColor: newColor });
+                    // Uppdatera även vald kommentar om en är markerad
+                    if (selectedElement !== null && selectedType === 'comment') {
+                      const newBoxes = [...commentBoxes];
+                      newBoxes[selectedElement] = { ...newBoxes[selectedElement], backgroundColor: newColor };
+                      setCommentBoxes(newBoxes);
+                    }
+                  }}
+                  onBlur={() => {
+                    // Spara till history när användaren är klar med att skriva
+                    if (selectedElement !== null && selectedType === 'comment') {
+                      saveToHistory(null, null, null, null, commentBoxes);
+                    }
+                  }}
+                  style={{
+                    width: '90px',
+                    padding: '6px 10px',
+                    backgroundColor: '#333',
+                    color: '#fff',
+                    border: '1px solid #555',
+                    borderRadius: '5px',
+                    fontSize: '0.85rem',
+                    fontFamily: 'monospace'
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Icon Selection */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <label style={{ color: '#fff', fontSize: '0.9rem', fontWeight: '500', minWidth: '80px' }}>
+                {t('commentSidebar.icon')}:
+              </label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                {/* Speech Bubble */}
+                <button
+                  onClick={() => {
+                    setCommentSettings({ ...commentSettings, icon: 'speech-bubble' });
+                    // Uppdatera även vald kommentar om en är markerad
+                    if (selectedElement !== null && selectedType === 'comment') {
+                      const newBoxes = [...commentBoxes];
+                      newBoxes[selectedElement] = { ...newBoxes[selectedElement], icon: 'speech-bubble' };
+                      setCommentBoxes(newBoxes);
+                      saveToHistory(null, null, null, null, newBoxes);
+                    }
+                  }}
+                  style={{
+                    width: '35px',
+                    height: '35px',
+                    backgroundColor: commentSettings.icon === 'speech-bubble' ? '#ff6b35' : '#333',
+                    border: commentSettings.icon === 'speech-bubble' ? '2px solid #ff6b35' : '2px solid #555',
+                    borderRadius: '5px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '18px',
+                    transition: 'all 0.2s ease'
+                  }}
+                  title={t('commentSidebar.speechBubble')}
+                  onMouseEnter={(e) => {
+                    if (commentSettings.icon !== 'speech-bubble') {
+                      e.currentTarget.style.backgroundColor = '#444';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (commentSettings.icon !== 'speech-bubble') {
+                      e.currentTarget.style.backgroundColor = '#333';
+                    }
+                  }}
+                >
+                  💬
+                </button>
+                
+                {/* Arrow */}
+                <button
+                  onClick={() => {
+                    setCommentSettings({ ...commentSettings, icon: 'arrow' });
+                    // Uppdatera även vald kommentar om en är markerad
+                    if (selectedElement !== null && selectedType === 'comment') {
+                      const newBoxes = [...commentBoxes];
+                      newBoxes[selectedElement] = { ...newBoxes[selectedElement], icon: 'arrow' };
+                      setCommentBoxes(newBoxes);
+                      saveToHistory(null, null, null, null, newBoxes);
+                    }
+                  }}
+                  style={{
+                    width: '35px',
+                    height: '35px',
+                    backgroundColor: commentSettings.icon === 'arrow' ? '#ff6b35' : '#333',
+                    border: commentSettings.icon === 'arrow' ? '2px solid #ff6b35' : '2px solid #555',
+                    borderRadius: '5px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '18px',
+                    transition: 'all 0.2s ease'
+                  }}
+                  title={t('commentSidebar.arrow')}
+                  onMouseEnter={(e) => {
+                    if (commentSettings.icon !== 'arrow') {
+                      e.currentTarget.style.backgroundColor = '#444';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (commentSettings.icon !== 'arrow') {
+                      e.currentTarget.style.backgroundColor = '#333';
+                    }
+                  }}
+                >
+                  →
+                </button>
+                
+                {/* Checkmark */}
+                <button
+                  onClick={() => {
+                    setCommentSettings({ ...commentSettings, icon: 'checkmark' });
+                    // Uppdatera även vald kommentar om en är markerad
+                    if (selectedElement !== null && selectedType === 'comment') {
+                      const newBoxes = [...commentBoxes];
+                      newBoxes[selectedElement] = { ...newBoxes[selectedElement], icon: 'checkmark' };
+                      setCommentBoxes(newBoxes);
+                      saveToHistory(null, null, null, null, newBoxes);
+                    }
+                  }}
+                  style={{
+                    width: '35px',
+                    height: '35px',
+                    backgroundColor: commentSettings.icon === 'checkmark' ? '#ff6b35' : '#333',
+                    border: commentSettings.icon === 'checkmark' ? '2px solid #ff6b35' : '2px solid #555',
+                    borderRadius: '5px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '18px',
+                    transition: 'all 0.2s ease'
+                  }}
+                  title={t('commentSidebar.checkmark')}
+                  onMouseEnter={(e) => {
+                    if (commentSettings.icon !== 'checkmark') {
+                      e.currentTarget.style.backgroundColor = '#444';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (commentSettings.icon !== 'checkmark') {
+                      e.currentTarget.style.backgroundColor = '#333';
+                    }
+                  }}
+                >
+                  ✓
+                </button>
+                
+                {/* X */}
+                <button
+                  onClick={() => {
+                    setCommentSettings({ ...commentSettings, icon: 'x' });
+                    // Uppdatera även vald kommentar om en är markerad
+                    if (selectedElement !== null && selectedType === 'comment') {
+                      const newBoxes = [...commentBoxes];
+                      newBoxes[selectedElement] = { ...newBoxes[selectedElement], icon: 'x' };
+                      setCommentBoxes(newBoxes);
+                      saveToHistory(null, null, null, null, newBoxes);
+                    }
+                  }}
+                  style={{
+                    width: '35px',
+                    height: '35px',
+                    backgroundColor: commentSettings.icon === 'x' ? '#ff6b35' : '#333',
+                    border: commentSettings.icon === 'x' ? '2px solid #ff6b35' : '2px solid #555',
+                    borderRadius: '5px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '18px',
+                    transition: 'all 0.2s ease'
+                  }}
+                  title={t('commentSidebar.x')}
+                  onMouseEnter={(e) => {
+                    if (commentSettings.icon !== 'x') {
+                      e.currentTarget.style.backgroundColor = '#444';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (commentSettings.icon !== 'x') {
+                      e.currentTarget.style.backgroundColor = '#333';
+                    }
+                  }}
+                >
+                  ✕
+                </button>
+                
+                {/* Star */}
+                <button
+                  onClick={() => {
+                    setCommentSettings({ ...commentSettings, icon: 'star' });
+                    // Uppdatera även vald kommentar om en är markerad
+                    if (selectedElement !== null && selectedType === 'comment') {
+                      const newBoxes = [...commentBoxes];
+                      newBoxes[selectedElement] = { ...newBoxes[selectedElement], icon: 'star' };
+                      setCommentBoxes(newBoxes);
+                      saveToHistory(null, null, null, null, newBoxes);
+                    }
+                  }}
+                  style={{
+                    width: '35px',
+                    height: '35px',
+                    backgroundColor: commentSettings.icon === 'star' ? '#ff6b35' : '#333',
+                    border: commentSettings.icon === 'star' ? '2px solid #ff6b35' : '2px solid #555',
+                    borderRadius: '5px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '18px',
+                    transition: 'all 0.2s ease'
+                  }}
+                  title={t('commentSidebar.star')}
+                  onMouseEnter={(e) => {
+                    if (commentSettings.icon !== 'star') {
+                      e.currentTarget.style.backgroundColor = '#444';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (commentSettings.icon !== 'star') {
+                      e.currentTarget.style.backgroundColor = '#333';
+                    }
+                  }}
+                >
+                  ★
+                </button>
+                
+                {/* Key */}
+                <button
+                  onClick={() => {
+                    setCommentSettings({ ...commentSettings, icon: 'key' });
+                    // Uppdatera även vald kommentar om en är markerad
+                    if (selectedElement !== null && selectedType === 'comment') {
+                      const newBoxes = [...commentBoxes];
+                      newBoxes[selectedElement] = { ...newBoxes[selectedElement], icon: 'key' };
+                      setCommentBoxes(newBoxes);
+                      saveToHistory(null, null, null, null, newBoxes);
+                    }
+                  }}
+                  style={{
+                    width: '35px',
+                    height: '35px',
+                    backgroundColor: commentSettings.icon === 'key' ? '#ff6b35' : '#333',
+                    border: commentSettings.icon === 'key' ? '2px solid #ff6b35' : '2px solid #555',
+                    borderRadius: '5px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '18px',
+                    transition: 'all 0.2s ease'
+                  }}
+                  title={t('commentSidebar.key')}
+                  onMouseEnter={(e) => {
+                    if (commentSettings.icon !== 'key') {
+                      e.currentTarget.style.backgroundColor = '#444';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (commentSettings.icon !== 'key') {
+                      e.currentTarget.style.backgroundColor = '#333';
+                    }
+                  }}
+                >
+                  🔑
+                </button>
+              </div>
+            </div>
+
+            {/* Preview */}
+            <div style={{ 
+              marginLeft: 'auto', 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '10px',
+              padding: '8px 15px',
+              backgroundColor: '#333',
+              borderRadius: '5px',
+              border: '1px solid #555'
+            }}>
+              <span style={{ color: '#888', fontSize: '0.85rem', marginRight: '5px' }}>
+                {t('commentSidebar.preview')}:
+              </span>
+              <div
+                style={{
+                  width: '24px',
+                  height: '24px',
+                  backgroundColor: commentSettings.backgroundColor,
+                  border: '2px solid #555',
+                  borderRadius: '2px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '14px',
+                  transform: 'rotate(-2deg)'
+                }}
+              >
+                {commentSettings.icon === 'speech-bubble' && '💬'}
+                {commentSettings.icon === 'arrow' && '→'}
+                {commentSettings.icon === 'checkmark' && '✓'}
+                {commentSettings.icon === 'x' && '✕'}
+                {commentSettings.icon === 'star' && '★'}
+                {commentSettings.icon === 'key' && '🔑'}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Highlight Sidebar */}
+        {tool === 'highlight' && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: pdfDoc ? `${sidebarWidth}px` : '0',
+              right: '17px',
+              zIndex: 45,
+              backgroundColor: '#2a2a2a',
+              borderBottom: '1px solid #444',
+              padding: '15px 20px',
+              display: 'flex',
+              gap: '20px',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              animation: 'slideDown 0.3s ease-out',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+            }}
+          >
+            {/* Lägen */}
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <span style={{ color: '#fff', fontSize: '0.9rem', fontWeight: 500 }}>{t('toolbar.mode', 'Läge')}:</span>
+              <button
+                onClick={() => setHighlightMode('rect')}
+                style={{
+                  padding: '8px 12px',
+                  backgroundColor: highlightMode === 'rect' ? '#ff6b35' : '#333',
+                  color: '#fff',
+                  border: highlightMode === 'rect' ? '1px solid #ff6b35' : '1px solid #555',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                {t('toolbar.highlightRect', 'Markera yta')}
+              </button>
+              <button
+                onClick={() => setHighlightMode('freehand')}
+                style={{
+                  padding: '8px 12px',
+                  backgroundColor: highlightMode === 'freehand' ? '#ff6b35' : '#333',
+                  color: '#fff',
+                  border: highlightMode === 'freehand' ? '1px solid #ff6b35' : '1px solid #555',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                {t('toolbar.highlightFreehand', 'Överstryk penna')}
+              </button>
+            </div>
+
+            {/* Färg */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <label style={{ color: '#fff', fontSize: '0.9rem', fontWeight: 500 }}>
+                {t('toolbar.highlightColor', 'Highlight-färg')}:
+              </label>
+              <input
+                type="color"
+                value={highlightSettings.color}
+                onChange={(e) => setHighlightSettings({ ...highlightSettings, color: e.target.value })}
+                style={{ width: '44px', height: '34px', border: '1px solid #555', background: '#222', cursor: 'pointer' }}
+              />
+              <input
+                type="text"
+                value={highlightSettings.color}
+                onChange={(e) => setHighlightSettings({ ...highlightSettings, color: e.target.value })}
+                style={{ width: '90px', padding: '6px 10px', background: '#333', color: '#fff', border: '1px solid #555', borderRadius: '5px', fontFamily: 'monospace' }}
+              />
+            </div>
+
+            {/* Opacitet */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <label style={{ color: '#fff', fontSize: '0.9rem', fontWeight: 500 }}>
+                {t('toolbar.opacity', 'Opacitet')}:
+              </label>
+              <input
+                type="range"
+                min="0.1"
+                max="0.95"
+                step="0.05"
+                value={highlightSettings.opacity}
+                onChange={(e) => setHighlightSettings({ ...highlightSettings, opacity: parseFloat(e.target.value) })}
+                style={{ accentColor: '#ff6b35' }}
+              />
+              <span style={{ color: '#fff', minWidth: '38px', textAlign: 'right' }}>{Math.round((highlightSettings.opacity || 0.35) * 100)}%</span>
+            </div>
+
+            {/* Stroke-bredd (för frihand) */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <label style={{ color: '#fff', fontSize: '0.9rem', fontWeight: 500 }}>
+                {t('toolbar.stroke', 'Bredd')}:
+              </label>
+              <input
+                type="range"
+                min="2"
+                max="48"
+                step="1"
+                value={highlightSettings.strokeWidth}
+                onChange={(e) => setHighlightSettings({ ...highlightSettings, strokeWidth: Math.max(2, Math.min(48, Number(e.target.value))) })}
+                style={{ accentColor: '#6b5bff', minWidth: '140px' }}
+              />
+              <span style={{ color: '#fff', minWidth: '44px', textAlign: 'right' }}>{highlightSettings.strokeWidth} px</span>
+            </div>
+          </div>
+        )}
+
+        {/* Eraser Sidebar */}
+        {tool === 'eraser' && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: pdfDoc ? `${sidebarWidth}px` : '0',
+              right: '17px',
+              zIndex: 44,
+              backgroundColor: '#2a2a2a',
+              borderBottom: '1px solid #444',
+              padding: '15px 20px',
+              display: 'flex',
+              gap: '20px',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              animation: 'slideDown 0.3s ease-out',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <label style={{ color: '#fff', fontSize: '0.9rem', fontWeight: 500 }}>
+                {t('toolbar.stroke', 'Bredd')}:
+              </label>
+              <input
+                type="range"
+                min="4"
+                max="64"
+                step="1"
+                value={eraserSettings.size}
+                onChange={(e) => setEraserSettings({ ...eraserSettings, size: Math.max(4, Math.min(64, Number(e.target.value))) })}
+                style={{ accentColor: '#6b5bff', minWidth: '160px' }}
+              />
+              <span style={{ color: '#fff', minWidth: '44px', textAlign: 'right' }}>{eraserSettings.size} px</span>
+            </div>
+          </div>
+        )}
 
         {/* Whiteout Settings Sidebar - Visas när whiteout-verktyget är aktivt */}
         {tool === 'whiteout' && (
@@ -4313,15 +6469,24 @@ export default function App() {
       <div
         ref={containerRef}
         className={
-          tool === 'text' ? 'text-cursor' : 
-          (tool === 'whiteout' || tool === 'patch' || (tool && tool.startsWith('shape')) ? 'crosshair-cursor' : '')
+          tool === 'text' || tool === 'edit-text' ? 'text-cursor' : 
+          (
+            tool === 'whiteout' ||
+            tool === 'patch' ||
+            (tool && tool.startsWith('shape')) ||
+            (tool === 'highlight' && highlightMode === 'rect')
+              ? 'crosshair-cursor'
+              : ''
+          )
         }
         style={{
           flex: 1,
-          overflow: 'auto',
+          overflowX: 'auto',
+          overflowY: (navMode === 'paged' && !canScrollCurrentPage) ? 'hidden' : 'auto',
           position: 'relative',
           backgroundColor: '#1a1a1a',
-          cursor: tool === 'pan' ? (isPanning ? 'grabbing' : 'grab') : undefined
+          cursor: tool === 'pan' ? (isPanning ? 'grabbing' : 'grab') : undefined,
+          scrollSnapType: navMode === 'paged' ? 'y mandatory' : 'none'
         }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
@@ -4331,18 +6496,20 @@ export default function App() {
         {pdfDoc ? (
           <div style={{ 
             position: 'relative', 
-            paddingTop: '180px', // Fast värde så canvas inte flyttas när sidebar ändras (text-sidebar är högst)
+            paddingTop: '100px', // Fast värde så canvas inte flyttas när sidebar ändras (text-sidebar är högst)
             paddingLeft: '20px',
             paddingRight: '20px',
             paddingBottom: '20px',
             minWidth: 'max-content',
             boxSizing: 'border-box',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: '20px' // Mellanrum mellan sidor
+            display: effectiveLayout === 'double' ? 'grid' : 'flex',
+            gridTemplateColumns: effectiveLayout === 'double' ? 'repeat(2, max-content)' : undefined,
+            flexDirection: effectiveLayout === 'double' ? undefined : 'column',
+            justifyContent: 'center',
+            alignItems: effectiveLayout === 'double' ? 'start' : 'center',
+            gap: '20px' // Mellanrum mellan sidor / mellan grid items
           }}>
-            {/* Rendera alla sidor vertikalt */}
+            {/* Rendera alla sidor */}
             {pdfPages.map((page, index) => {
               const pageNum = index + 1;
               const viewport = pageViewports[index];
@@ -4357,7 +6524,8 @@ export default function App() {
                   style={{
                     position: 'relative',
                     display: 'inline-block',
-                    marginBottom: index < pdfPages.length - 1 ? '20px' : '0'
+                    marginBottom: effectiveLayout === 'double' ? '0' : (index < pdfPages.length - 1 ? '20px' : '0'),
+                    scrollSnapAlign: navMode === 'paged' ? 'center' : 'none'
                   }}
                 >
                   <canvas
@@ -4368,7 +6536,15 @@ export default function App() {
                       border: '1px solid #ccc',
                       boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
                       display: 'block',
-                      backgroundColor: 'white'
+                      backgroundColor: 'white',
+                      cursor:
+                        (tool === 'highlight' && highlightMode === 'freehand') || tool === 'eraser'
+                          ? 'none'
+                          : (tool === 'highlight' && highlightMode === 'rect')
+                            ? 'crosshair'
+                            : (tool === 'whiteout' || tool === 'patch' || (tool && tool.startsWith('shape')))
+                              ? 'crosshair'
+                              : 'default'
                     }}
                   />
                   
@@ -4388,6 +6564,7 @@ export default function App() {
                     zoom={zoom}
                     isSelected={selectedElement === globalIndex && selectedType === 'whiteout'}
                     tool={tool}
+                    whiteoutBoxIndex={globalIndex}
                     onUpdate={(updated) => {
                       const newBoxes = [...whiteoutBoxes];
                       newBoxes[globalIndex] = updated;
@@ -4406,6 +6583,36 @@ export default function App() {
                       setResizeHandle(handle);
                       setDragStart({ x, y });
                       setOriginalRect(whiteoutBox.rect);
+                    }}
+                    onRotationStart={(e) => {
+                      e.stopPropagation();
+                      const pageNum = whiteoutBox.pageIndex !== undefined ? whiteoutBox.pageIndex + 1 : currentPage;
+                      const canvasRef = canvasRefs.current[pageNum];
+                      if (!canvasRef) return;
+                      const canvasRect = canvasRef.getBoundingClientRect();
+                      const mouseX = e.clientX - canvasRect.left;
+                      const mouseY = e.clientY - canvasRect.top;
+
+                      let actualRectPx = rectPtToPx(whiteoutBox.rect, zoom);
+                      const container = document.querySelector(`[data-whiteout-container-index="${globalIndex}"]`);
+                      if (container) {
+                        const rect = container.getBoundingClientRect();
+                        actualRectPx = {
+                          x: rect.left - canvasRect.left,
+                          y: rect.top - canvasRect.top,
+                          width: rect.width,
+                          height: rect.height
+                        };
+                      }
+
+                      const centerX = actualRectPx.x + actualRectPx.width / 2;
+                      const centerY = actualRectPx.y + actualRectPx.height / 2;
+
+                      setSelectedElement(globalIndex);
+                      setSelectedType('whiteout');
+                      setIsRotating(true);
+                      setRotationStart({ x: mouseX, y: mouseY, centerX, centerY });
+                      setInitialRotation(whiteoutBox.rotation || 0);
                     }}
                   />
                 );
@@ -4443,6 +6650,77 @@ export default function App() {
                         />
                       );
                     })}
+
+                  {/* Frihand-highlight strokes för denna sida */}
+                  <svg
+                    width={viewport.width}
+                    height={viewport.height}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      pointerEvents: 'none',
+                      overflow: 'visible'
+                    }}
+                  >
+                    {highlightStrokes
+                      .filter((stroke) => stroke.pageIndex === index)
+                      .map((stroke, strokeIdx) => {
+                        const pointsPx = (stroke.points || []).map((p) => pointPtToPx(p, zoom));
+                        if (pointsPx.length < 2) return null;
+                        const d = pointsPx
+                          .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`)
+                          .join(' ');
+                        return (
+                          <path
+                            key={`stroke-${pageNum}-${strokeIdx}`}
+                            d={d}
+                            fill="none"
+                            stroke={hexToRgba(stroke.color || '#FFEB3B', stroke.opacity ?? 0.35)}
+                            strokeWidth={(stroke.strokeWidth || 12) * zoom}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            opacity={stroke.opacity ?? 0.35}
+                          />
+                        );
+                      })}
+                    {/* Live-stroke preview */}
+                    {currentStroke && currentStroke.pageIndex === index && currentStroke.points?.length > 1 && (
+                      <path
+                        d={currentStroke.points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')}
+                        fill="none"
+                        stroke={hexToRgba(currentStroke.color || '#FFEB3B', currentStroke.opacity ?? 0.35)}
+                        strokeWidth={(currentStroke.strokeWidth || 12) * zoom}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        opacity={currentStroke.opacity ?? 0.35}
+                      />
+                    )}
+                    {/* Cursor preview ring för frihand highlight */}
+                    {highlightCursor && highlightCursor.pageNum === pageNum && highlightMode === 'freehand' && tool === 'highlight' && (
+                      <circle
+                        cx={highlightCursor.x}
+                        cy={highlightCursor.y}
+                        r={(highlightSettings.strokeWidth / 2) * zoom}
+                        fill="none"
+                        stroke={hexToRgba(highlightSettings.color, 0.9)}
+                        strokeWidth={2}
+                        opacity={0.9}
+                      />
+                    )}
+                    {/* Cursor preview ring för eraser */}
+                    {eraserCursor && eraserCursor.pageNum === pageNum && tool === 'eraser' && (
+                      <circle
+                        cx={eraserCursor.x}
+                        cy={eraserCursor.y}
+                        r={(eraserSettings.size / 2) * zoom}
+                        fill="none"
+                        stroke={eraserCursorColor}
+                        strokeWidth={2}
+                        opacity={0.9}
+                      />
+                    )}
+                  </svg>
                   
                   {/* Render text boxes för denna sida */}
                   {textBoxes
@@ -4469,9 +6747,38 @@ export default function App() {
                           autoEdit={textBox.isNew === true}
                           textBoxIndex={globalIndex}
                           tool={tool}
+                          hovered={tool === 'edit-text' && hoveredTextBoxIndex === globalIndex}
+                          onHoverChange={(isHovering) => {
+                            if (tool === 'edit-text') {
+                              setHoveredTextBoxIndex(isHovering ? globalIndex : null);
+                            }
+                          }}
+                          editTrigger={textEditTrigger && textEditTrigger.index === globalIndex ? textEditTrigger.nonce : null}
+                          onEditComplete={() => {
+                            setTextEditTrigger(null);
+                          }}
                           onUpdate={(updated) => {
                             const newBoxes = [...textBoxes];
-                            newBoxes[globalIndex] = updated;
+                            const prev = textBoxes[globalIndex];
+
+                            // 1) Markera dirty först
+                            let dirtyCandidate = markTextBoxDirty(prev, updated);
+
+                            // 2) För importerad text: sampla maskColor direkt när den blir dirty,
+                            // så originaltexten inte "blöder igenom" i UI.
+                            if (dirtyCandidate?.isImported && dirtyCandidate?.isDirty && !dirtyCandidate?.maskColor) {
+                              const rectForSample = prev?.originalRect || dirtyCandidate?.originalRect || dirtyCandidate?.rect || prev?.rect;
+                              if (rectForSample) {
+                                const sampleRectPx = rectPtToPx(rectForSample, zoom);
+                                const sampled = sampleRectAverageColor(pageNum, sampleRectPx);
+                                const maskColor = sampled || 'rgba(255,255,255,1)';
+                                dirtyCandidate = markTextBoxDirty(prev, { ...dirtyCandidate, maskColor });
+                              } else {
+                                dirtyCandidate = markTextBoxDirty(prev, { ...dirtyCandidate, maskColor: 'rgba(255,255,255,1)' });
+                              }
+                            }
+
+                            newBoxes[globalIndex] = dirtyCandidate;
                             setTextBoxes(newBoxes);
                             saveToHistory(newBoxes, null, null, null, commentBoxes);
                           }}
@@ -4567,11 +6874,19 @@ export default function App() {
                           key={`shape-${pageNum}-${globalIndex}`}
                           shape={{
                             ...shapeBox,
-                            ...(selectedElement === globalIndex && selectedType === 'shape' ? {
-                              strokeColor: shapeSettings.strokeColor,
-                              fillColor: shapeSettings.fillColor,
-                              strokeWidth: shapeSettings.strokeWidth
-                            } : {})
+                            ...(shapeBox.type === 'highlight'
+                              ? {
+                                  fillColor: hexToRgba(shapeBox.fillColor || '#FFEB3B', shapeBox.opacity ?? 0.35),
+                                  strokeColor: 'transparent'
+                                }
+                              : {}),
+                            ...(selectedElement === globalIndex && selectedType === 'shape' && shapeBox.type !== 'highlight'
+                              ? {
+                                  strokeColor: shapeSettings.strokeColor,
+                                  fillColor: shapeSettings.fillColor,
+                                  strokeWidth: shapeSettings.strokeWidth
+                                }
+                              : {})
                           }}
                           zoom={zoom}
                           isSelected={selectedElement === globalIndex && selectedType === 'shape'}
@@ -4631,12 +6946,14 @@ export default function App() {
                           }}
                           onShapeClick={(e) => {
                             // När shape klickas och shape-verktyget inte är aktivt, aktivera det
-                            if (!(tool && tool.startsWith('shape'))) {
-                              const shapeType = shapeBox.type || 'rectangle';
+                            const shapeType = shapeBox.type || 'rectangle';
+                            const isHighlightShape = shapeType === 'highlight';
+                            const isShapeToolActive = tool && (tool.startsWith('shape') || tool === 'highlight');
+                            if (!isShapeToolActive) {
                               if (containerRef.current) {
                                 scrollPositionRef.current = containerRef.current.scrollTop;
                               }
-                              setTool(`shape-${shapeType}`);
+                              setTool(isHighlightShape ? 'highlight' : `shape-${shapeType}`);
                               setSelectedElement(globalIndex);
                               setSelectedType('shape');
                               // Starta dragging direkt
@@ -4679,22 +6996,30 @@ export default function App() {
                           commentBox={commentBox}
                           zoom={zoom}
                           isSelected={selectedElement === globalIndex && selectedType === 'comment'}
-                          tool={tool}
+                          forceHidePopup={isDragging && selectedType === 'comment'}
                           onUpdate={(updated) => {
                             const newBoxes = [...commentBoxes];
                             newBoxes[globalIndex] = updated;
                             setCommentBoxes(newBoxes);
                             saveToHistory(null, null, null, null, newBoxes);
                           }}
-                          onDelete={() => {
-                            const newBoxes = commentBoxes.filter((_, i) => i !== globalIndex);
-                            setCommentBoxes(newBoxes);
-                            if (selectedElement === globalIndex && selectedType === 'comment') {
-                              setSelectedElement(null);
-                              setSelectedType(null);
+                          onDelete={(commentIdOrBox) => {
+                            // Hitta kommentaren baserat på id eller index
+                            const indexToDelete = typeof commentIdOrBox === 'string' 
+                              ? commentBoxes.findIndex(cb => cb.id === commentIdOrBox)
+                              : commentBoxes.findIndex(cb => cb === commentIdOrBox);
+                            
+                            if (indexToDelete !== -1) {
+                              const newBoxes = commentBoxes.filter((_, i) => i !== indexToDelete);
+                              setCommentBoxes(newBoxes);
+                              if (selectedElement === indexToDelete && selectedType === 'comment') {
+                                setSelectedElement(null);
+                                setSelectedType(null);
+                              }
+                              saveToHistory(null, null, null, null, newBoxes);
                             }
-                            saveToHistory(null, null, null, null, newBoxes);
                           }}
+                          onEditEnd={handleCommentEditEnd}
                         />
                       );
                     })}
@@ -4872,6 +7197,7 @@ export default function App() {
           currentPage={currentPage}
           totalPages={pdfDoc.numPages}
           onPageChange={(pageNum) => {
+            currentPageRef.current = pageNum;
             setCurrentPage(pageNum);
             scrollToPage(pageNum);
           }}
@@ -4907,6 +7233,8 @@ export default function App() {
           onRotatePage={handleRotatePages}
           onDeletePage={handleDeletePages}
           onAddPage={handleAddPage}
+          onDuplicatePages={handleDuplicatePages}
+          onMovePages={handleMovePages}
           onClose={() => setShowPageManagementPanel(false)}
         />
       )}

@@ -8,6 +8,8 @@ export default function PageManagementPanel({
   onRotatePage,
   onDeletePage,
   onAddPage,
+  onDuplicatePages,
+  onMovePages,
   onClose 
 }) {
   const { t } = useTranslation();
@@ -67,6 +69,22 @@ export default function PageManagementPanel({
       }
     };
     input.click();
+  };
+
+  const handleDuplicate = () => {
+    if (selectedPages.size === 0) return;
+    onDuplicatePages?.(Array.from(selectedPages));
+    setSelectedPages(new Set());
+  };
+
+  const handleMoveUp = () => {
+    if (selectedPages.size === 0) return;
+    onMovePages?.(Array.from(selectedPages), 'up');
+  };
+
+  const handleMoveDown = () => {
+    if (selectedPages.size === 0) return;
+    onMovePages?.(Array.from(selectedPages), 'down');
   };
 
   return (
@@ -299,6 +317,68 @@ export default function PageManagementPanel({
             }}
           >
             {t('pageManagement.addFromFile', 'Lägg till från fil')}
+          </button>
+        </div>
+      </div>
+
+      {/* Ordna om / duplicera */}
+      <div style={{ marginTop: '25px', padding: '15px', backgroundColor: '#1a1a1a', borderRadius: '8px' }}>
+        <h3 style={{ color: '#fff', margin: '0 0 15px 0', fontSize: '1.1rem' }}>
+          {t('pageManagement.organize', 'Ordna sidor')}
+        </h3>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <button
+            onClick={handleDuplicate}
+            disabled={selectedPages.size === 0}
+            style={{
+              padding: '8px 20px',
+              backgroundColor: selectedPages.size > 0 ? '#17a2b8' : '#555',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: selectedPages.size > 0 ? 'pointer' : 'not-allowed',
+              fontSize: '0.9rem',
+              fontWeight: '600',
+              opacity: selectedPages.size > 0 ? 1 : 0.5
+            }}
+          >
+            {t('pageManagement.duplicate', 'Duplicera')}
+          </button>
+
+          <button
+            onClick={handleMoveUp}
+            disabled={selectedPages.size === 0}
+            style={{
+              padding: '8px 20px',
+              backgroundColor: selectedPages.size > 0 ? '#6c757d' : '#555',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: selectedPages.size > 0 ? 'pointer' : 'not-allowed',
+              fontSize: '0.9rem',
+              fontWeight: '600',
+              opacity: selectedPages.size > 0 ? 1 : 0.5
+            }}
+          >
+            {t('pageManagement.moveUp', 'Flytta upp')}
+          </button>
+
+          <button
+            onClick={handleMoveDown}
+            disabled={selectedPages.size === 0}
+            style={{
+              padding: '8px 20px',
+              backgroundColor: selectedPages.size > 0 ? '#6c757d' : '#555',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: selectedPages.size > 0 ? 'pointer' : 'not-allowed',
+              fontSize: '0.9rem',
+              fontWeight: '600',
+              opacity: selectedPages.size > 0 ? 1 : 0.5
+            }}
+          >
+            {t('pageManagement.moveDown', 'Flytta ner')}
           </button>
         </div>
       </div>

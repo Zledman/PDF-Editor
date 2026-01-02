@@ -66,8 +66,8 @@ export default function ShapeBox({
     boundingBox = rectPx;
   }
 
-  // Visa ram endast när shape-verktyget är aktivt
-  const showBorder = tool && tool.startsWith('shape');
+  // Visa ram när shape-verktyget eller highlight-verktyget är aktivt
+  const showBorder = tool && (tool.startsWith('shape') || tool === 'highlight');
   
   // Cursor: pointer när tool === null, move när vald och verktyget är aktivt, annars default
   let cursorStyle = 'default';

@@ -1,0 +1,247 @@
+.landingRoot {
+  min-height: 100vh;
+  background: radial-gradient(1200px 800px at 15% 10%, rgba(255, 107, 53, 0.14), transparent 60%),
+    radial-gradient(900px 650px at 85% 20%, rgba(255, 140, 66, 0.10), transparent 55%),
+    linear-gradient(135deg, #141414 0%, #222222 100%);
+  color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.landingMain {
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px 20px 40px;
+}
+
+.landingHero {
+  display: grid;
+  grid-template-columns: 1.05fr 0.95fr;
+  gap: 40px;
+  align-items: center;
+  padding: 34px 0 24px;
+}
+
+.landingHeroLeft {
+  max-width: 640px;
+}
+
+.landingTitle {
+  font-size: clamp(2.2rem, 3.5vw, 3.4rem);
+  line-height: 1.05;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  margin: 0 0 14px;
+  background: linear-gradient(135deg, #ff6b35 0%, #ff8c42 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.landingSubtitle {
+  margin: 0 0 22px;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 1.06rem;
+  line-height: 1.55;
+  max-width: 56ch;
+}
+
+.landingHeroCtas {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.landingBtn {
+  border: 0;
+  border-radius: 999px;
+  padding: 12px 18px;
+  font-weight: 650;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: transform 140ms ease, box-shadow 140ms ease, background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+  user-select: none;
+}
+
+.landingBtn:active {
+  transform: translateY(1px);
+}
+
+.landingBtnPrimary {
+  color: #fff;
+  background: #ff6b35;
+  box-shadow: 0 10px 28px rgba(255, 107, 53, 0.22);
+}
+.landingBtnPrimary:hover {
+  background: #ff8c42;
+  box-shadow: 0 14px 32px rgba(255, 107, 53, 0.28);
+  transform: translateY(-1px);
+}
+
+.landingBtnSecondary {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+.landingBtnSecondary:hover {
+  background: rgba(255, 255, 255, 0.10);
+  border-color: rgba(255, 255, 255, 0.22);
+  transform: translateY(-1px);
+}
+
+.landingBtnGhost {
+  color: #ff6b35;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 107, 53, 0.55);
+}
+.landingBtnGhost:hover {
+  background: rgba(255, 107, 53, 0.10);
+  border-color: rgba(255, 107, 53, 0.85);
+  transform: translateY(-1px);
+}
+
+.landingHeroRight {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Upload-kort när det ligger i hero-kolumnen */
+.landingUploadCardInHero {
+  margin: 0;
+  max-width: 520px;
+}
+
+.landingUploadCard {
+  width: 100%;
+  max-width: 520px;
+  min-height: 240px;
+  margin: 16px auto 0;
+  border-radius: 18px;
+  border: 2px dashed rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.03);
+  box-shadow: 0 18px 52px rgba(0, 0, 0, 0.32);
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color 150ms ease, background-color 150ms ease, transform 150ms ease;
+}
+.landingUploadCard:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 107, 53, 0.45);
+}
+.landingUploadCard.isDragging {
+  border-color: rgba(255, 107, 53, 0.95);
+  background: rgba(255, 107, 53, 0.06);
+}
+
+.landingUploadPattern {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle at 2px 2px, rgba(255, 107, 53, 0.12) 1px, transparent 0);
+  background-size: 34px 34px;
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.landingUploadContent {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  padding: 26px 20px 22px;
+}
+
+.landingUploadIcon {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  margin: 0 auto 14px;
+  display: grid;
+  place-items: center;
+  color: #ff6b35;
+  background: rgba(255, 107, 53, 0.14);
+  border: 2px solid rgba(255, 107, 53, 0.55);
+}
+
+.landingUploadTitle {
+  margin: 0 0 6px;
+  font-size: 1.45rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.96);
+}
+
+.landingUploadSub {
+  margin: 0 0 14px;
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.landingUploadActions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.landingFeatures {
+  margin: 38px 0 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.landingFeatureCard {
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 18px 16px;
+  text-align: center;
+  transition: transform 150ms ease, border-color 150ms ease, background-color 150ms ease;
+}
+.landingFeatureCard:hover {
+  transform: translateY(-3px);
+  border-color: rgba(255, 107, 53, 0.30);
+  background: rgba(255, 107, 53, 0.06);
+}
+
+.landingFeatureIcon {
+  font-size: 2.25rem;
+  margin-bottom: 10px;
+}
+
+.landingFeatureTitle {
+  margin: 0 0 6px;
+  font-size: 1.05rem;
+  color: rgba(255, 107, 53, 0.95);
+}
+
+.landingFeatureDesc {
+  margin: 0;
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.70);
+  line-height: 1.45;
+}
+
+.landingFooter {
+  margin-top: 28px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 0.92rem;
+}
+
+@media (max-width: 900px) {
+  .landingHero {
+    grid-template-columns: 1fr;
+    gap: 18px;
+    padding-top: 22px;
+  }
+  .landingHeroRight {
+    justify-content: center;
+  }
+  .landingUploadCardInHero {
+    max-width: 520px;
+  }
+  .landingFeatures {
+    grid-template-columns: 1fr;
+  }
+}
+
+

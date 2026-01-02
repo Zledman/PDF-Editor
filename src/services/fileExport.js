@@ -7,8 +7,53 @@ import PptxGenJS from 'pptxgenjs';
 /**
  * Exporterar PDF med alla redigeringar
  */
-export async function exportAsPDF(pdfData, textBoxes, whiteoutBoxes, patchBoxes) {
-  const exported = await exportPDF(pdfData, textBoxes, whiteoutBoxes, patchBoxes);
+export async function exportAsPDF(pdfData, textBoxes, whiteoutBoxes, patchBoxes, shapeBoxes = [], highlightStrokes = []) {
+  const replacements = (textBoxes || []).filter(tb => tb.isImported && tb.isDirty);
+
+  if (replacements.length === 0) {
+    const exported = await exportPDF(pdfData, textBoxes, whiteoutBoxes, patchBoxes, shapeBoxes, highlightStrokes);
+    return { blob: new Blob([exported], { type: 'application/pdf' }), extension: 'pdf' };
+  }
+
+  const meta = {
+    replacements: replacements.map(tb => ({
+      page: (tb.pageIndex ?? 0) + 1,
+      bbox: {
+        x: tb.originalRect?.x ?? tb.rect.x,
+        y: tb.originalRect?.y ?? tb.rect.y,
+        width: tb.originalRect?.width ?? tb.rect.width,
+        height: tb.originalRect?.height ?? tb.rect.height,
+      },
+      text: tb.text || '',
+      font: tb.fontFamily || 'Helvetica',
+      size: tb.fontSizePt || 12,
+      color: tb.color || '#000000',
+    })),
+  };
+
+  const formData = new FormData();
+  formData.append('file', new Blob([pdfData], { type: 'application/pdf' }), 'input.pdf');
+  formData.append('meta', JSON.stringify(meta));
+
+  const serverUrl =
+    import.meta.env.VITE_TEXT_SERVER_URL || 'http://localhost:8082/replace-text'; // Default to 8082
+
+  const resp = await fetch(serverUrl, { method: 'POST', body: formData });
+  if (!resp.ok) {
+    // Fallback: Exportera med klient-rendering (overlay) istället för att krascha nedladdningen.
+    // OBS: Detta kan inte "radera/ersätta" originaltexten i PDF:en utan servern,
+    // men ger ändå en exporterad PDF med alla överlägg (text, whiteout, patch, shapes, highlight).
+    console.warn(`Textservern svarade inte (${resp.status}). Faller tillbaka till klient-export.`);
+    const exported = await exportPDF(pdfData, textBoxes, whiteoutBoxes, patchBoxes, shapeBoxes, highlightStrokes);
+    return { blob: new Blob([exported], { type: 'application/pdf' }), extension: 'pdf' };
+  }
+
+  const outBuf = await resp.arrayBuffer();
+
+  // Servern har redan tagit bort + skrivit om importerad ändrad text.
+  // Lägg på alla andra overlays (whiteout/patch/shapes/highlights + nya textrutor) efteråt.
+  const overlayTextBoxes = (textBoxes || []).filter(tb => !(tb.isImported && tb.isDirty));
+  const exported = await exportPDF(outBuf, overlayTextBoxes, whiteoutBoxes, patchBoxes, shapeBoxes, highlightStrokes);
   return { blob: new Blob([exported], { type: 'application/pdf' }), extension: 'pdf' };
 }
 

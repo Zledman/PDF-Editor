@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "dev:server": "cd server-java && mvn spring-boot:run"
   },
   "dependencies": {
     "docx": "^9.5.1",

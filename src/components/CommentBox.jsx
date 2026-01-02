@@ -1,17 +1,75 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { rectPtToPx } from '../utils/coordMap';
+
+// Clamp-funktion för att säkerställa att värde är inom min/max
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+const DEFAULT_COMMENT_COLOR = '#FFF59D';
+
+function expandHex(hex) {
+  if (!hex) return null;
+  const h = hex.trim().replace('#', '');
+  if (h.length === 3) return h.split('').map((c) => c + c).join('');
+  if (h.length === 6) return h;
+  return null;
+}
+
+function hexToRgb(hex) {
+  const h = expandHex(hex);
+  if (!h) return null;
+  const num = parseInt(h, 16);
+  return {
+    r: (num >> 16) & 255,
+    g: (num >> 8) & 255,
+    b: num & 255
+  };
+}
+
+function componentToHex(c) {
+  const clamped = Math.max(0, Math.min(255, Math.round(c)));
+  const str = clamped.toString(16);
+  return str.length === 1 ? '0' + str : str;
+}
+
+function adjustLightness(hex, delta) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return hex;
+  return (
+    '#' +
+    componentToHex(rgb.r + delta) +
+    componentToHex(rgb.g + delta) +
+    componentToHex(rgb.b + delta)
+  );
+}
+
+function createGradient(colorInput) {
+  const base = (colorInput || DEFAULT_COMMENT_COLOR).trim();
+  if (hexToRgb(base)) {
+    const light = adjustLightness(base, 40);
+    const dark = adjustLightness(base, -25);
+    return `linear-gradient(180deg, ${light} 0%, ${dark} 100%)`;
+  }
+  return `linear-gradient(180deg, ${base} 0%, ${base} 100%)`;
+}
 
 export default function CommentBox({ 
   commentBox, 
   zoom, 
   onUpdate, 
   onDelete,
+  onEditEnd,
   isSelected,
-  tool = null
+  forceHidePopup = false
 }) {
+  const { t } = useTranslation();
   const [isEditing, setIsEditing] = useState(false);
   const [isHovering, setIsHovering] = useState(false);
   const [localText, setLocalText] = useState(commentBox.text || '');
+  const [popupHeight, setPopupHeight] = useState(0);
+  const [popupWidth, setPopupWidth] = useState(0);
   const textRef = useRef(null);
   const containerRef = useRef(null);
   const popupRef = useRef(null);
@@ -19,12 +77,17 @@ export default function CommentBox({
   // Konvertera pt till px för visning
   const rectPx = rectPtToPx(commentBox.rect, zoom);
   
-  // Markör-storlek (fast storlek)
-  const markerSize = 20; // 20px kvadratisk markör
+  // Markör-storlek (sticky note-storlek)
+  const markerSize = 24; // 24px för sticky note-utseende
 
   useEffect(() => {
     setLocalText(commentBox.text || '');
-  }, [commentBox.text]);
+    // Om kommentaren är ny, öppna redigeringsläge automatiskt
+    if (commentBox.isNew && !isEditing) {
+      setIsEditing(true);
+      setIsHovering(true);
+    }
+  }, [commentBox.text, commentBox.isNew, isEditing]);
 
   // Fokusera textarea när redigeringsläge aktiveras
   useEffect(() => {
@@ -32,13 +95,10 @@ export default function CommentBox({
       setTimeout(() => {
         if (textRef.current) {
           textRef.current.focus();
-          // Sätt cursor i slutet av texten
           try {
             const length = textRef.current.value.length;
             textRef.current.setSelectionRange(length, length);
-          } catch (e) {
-            // Ignorera om setSelectionRange inte fungerar
-          }
+          } catch (e) {}
         }
       }, 10);
     }
@@ -48,41 +108,53 @@ export default function CommentBox({
     setLocalText(e.target.value);
   };
 
-  const handleBlur = () => {
-    setIsEditing(false);
-    if (onUpdate) {
-      onUpdate({
-        ...commentBox,
-        text: localText
-      });
+  const commitEdit = useCallback((nextTarget) => {
+    // Hoppa över om fokus/klick hamnar i kommentar-sidomenyn eller färgvalet
+    if (nextTarget && (
+      nextTarget.closest?.('[data-comment-sidebar]') ||
+      nextTarget.closest?.('[data-comment-color-picker]')
+    )) {
+      return;
     }
-    // Ingen custom event längre - App.jsx hanterar verktyg-hantering
+    setIsEditing(false);
+    setIsHovering(false); // Stäng också hover när redigering avslutas
+    if (onUpdate) {
+      // Ta bort isNew-flaggan när vi sparar
+      const updated = {
+        ...commentBox,
+        text: localText,
+        isNew: false
+      };
+      onUpdate(updated);
+    }
+    // Anropa callback för att avaktivera comment-verktyget
+    if (onEditEnd) {
+      onEditEnd();
+    }
+  }, [commentBox, localText, onUpdate, onEditEnd]);
+
+  const handleBlur = (e) => {
+    const nextTarget = e?.relatedTarget || document.activeElement;
+    commitEdit(nextTarget);
   };
 
   const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleBlur();
-    } else if (e.key === 'Escape') {
-      setLocalText(commentBox.text || ''); // Återställ ändringar
+    // Låt Enter skapa ny rad; endast Escape avbryter redigering
+    if (e.key === 'Escape') {
+      setLocalText(commentBox.text || '');
       setIsEditing(false);
     }
   };
 
-  const handleClose = (e) => {
-    e.stopPropagation();
-    setIsEditing(false);
-    setIsHovering(false);
-  };
-
   const handleMarkerClick = (e) => {
-    // Om kommentaren redan är markerad, öppna redigeringsläge
-    if (isSelected && !isEditing) {
+    // Öppna redigeringsläge när man klickar på markören
+    if (!isEditing) {
       e.stopPropagation();
       setIsEditing(true);
+      setIsHovering(true); // Behåll hover när man redigerar
       return;
     }
-    // Annars låt App.jsx hantera markering (ingen stopPropagation)
+    // Annars låt App.jsx hantera markering
   };
 
   const handleMouseEnter = () => {
@@ -96,7 +168,7 @@ export default function CommentBox({
       containerRef.current?.contains(relatedTarget) ||
       popupRef.current?.contains(relatedTarget)
     )) {
-      return; // Musen är fortfarande över kommentaren eller popup:en
+      return;
     }
     // Stäng inte hover om redigeringsläge är aktivt
     if (!isEditing) {
@@ -104,49 +176,85 @@ export default function CommentBox({
     }
   };
 
-  // Beräkna popup-position (ovanför markören som standard)
-  const getPopupPosition = () => {
-    if (!popupRef.current || !containerRef.current) {
-      return { top: -120, left: 0 }; // Fallback position ovanför
+  // Stäng kommentarsrutan vid klick utanför när redigeringsläge är aktivt
+  useEffect(() => {
+    if (!isEditing) return;
+    const handleDocumentMouseDown = (e) => {
+      const target = e.target;
+      const insidePopup = popupRef.current?.contains(target);
+      const insideMarker = containerRef.current?.contains(target);
+      const inSidebar = target.closest?.('[data-comment-sidebar]');
+      const inColorPicker = target.closest?.('[data-comment-color-picker]');
+      if (insidePopup || insideMarker || inSidebar || inColorPicker) return;
+      commitEdit(target);
+    };
+    document.addEventListener('mousedown', handleDocumentMouseDown);
+    return () => document.removeEventListener('mousedown', handleDocumentMouseDown);
+  }, [isEditing, commitEdit]);
+
+  // Uppdatera popup-dimensioner
+  const updatePopupDimensions = useCallback(() => {
+    if (!popupRef.current) {
+      return;
+    }
+    const { offsetHeight, offsetWidth } = popupRef.current;
+    setPopupHeight(offsetHeight);
+    setPopupWidth(offsetWidth);
+  }, []);
+
+  // Uppdatera dimensioner när popup visas eller innehåll ändras
+  useEffect(() => {
+    if ((isHovering && !isEditing && localText) || isEditing) {
+      setTimeout(updatePopupDimensions, 0);
+    }
+  }, [isHovering, isEditing, localText, updatePopupDimensions]);
+
+  // Beräkna popup-position
+  const getPopupPosition = useCallback(() => {
+    if (!containerRef.current) {
+      return { top: -120, left: 0 };
     }
 
-    const popup = popupRef.current;
     const container = containerRef.current;
     const containerRect = container.getBoundingClientRect();
+    const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
     
-    // Popup ska vara ovanför markören
-    const popupHeight = popup.offsetHeight || 100; // Fallback höjd
-    const popupWidth = popup.offsetWidth || 200; // Fallback bredd
+    const markerTop = containerRect.top + scrollTop;
+    const spacing = 2; // Minska avståndet mellan popup och markör
+    const shouldMoveBelow = markerTop - popupHeight - spacing < scrollTop;
     
-    // Standard position: ovanför markören, centrerad
-    // Använd fast negativt värde för att säkerställa att markören är synlig
-    let top = -popupHeight - 20; // 20px mellanrum för att säkerställa att markören är synlig
-    let left = (markerSize - popupWidth) / 2; // Centrera horisontellt
+    const top = shouldMoveBelow 
+      ? markerSize + spacing
+      : -popupHeight - spacing;
     
-    // Kontrollera om popup går utanför viewport och justera om nödvändigt
+    const leftOffset = (markerSize - popupWidth) / 2;
     const viewportWidth = window.innerWidth;
     const containerLeft = containerRect.left;
-    const containerTop = containerRect.top;
     
-    // Om popup går utanför höger kanten, flytta den
-    if (containerLeft + rectPx.x + left + popupWidth > viewportWidth - 10) {
-      left = viewportWidth - containerLeft - rectPx.x - popupWidth - 10;
-    }
+    const left = clamp(
+      leftOffset,
+      -containerLeft + 10,
+      viewportWidth - containerLeft - popupWidth - 10
+    );
     
-    // Om popup går utanför vänster kanten, flytta den
-    if (containerLeft + rectPx.x + left < 10) {
-      left = -rectPx.x + 10;
-    }
-    
-    // Om det inte finns plats ovanför (t.ex. nära toppen av sidan), visa nedanför istället
-    if (containerTop + rectPx.y + top < 10) {
-      top = markerSize + 20; // Visa nedanför markören med 20px mellanrum
-    }
-    
-    return { top, left };
-  };
+    return { top, left, shouldMoveBelow };
+  }, [popupHeight, popupWidth, markerSize]);
 
   const popupPosition = getPopupPosition();
+  const isStyleCalculationInProgress = popupWidth === 0 && popupHeight === 0;
+  // Visa popup vid hover eller redigering (stängs ändå när kommentaren avmarkeras via effekt)
+  const shouldShowPopup = (isHovering || isEditing) && !forceHidePopup;
+
+  const handleDelete = (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (onDelete) {
+      onDelete(commentBox.id || commentBox);
+    }
+    // Stäng redigering och hover när man tar bort
+    setIsEditing(false);
+    setIsHovering(false);
+  };
 
   return (
     <div
@@ -157,100 +265,111 @@ export default function CommentBox({
         top: `${rectPx.y}px`,
         width: `${markerSize}px`,
         height: `${markerSize}px`,
-        zIndex: 15 // Kommentarer ska ligga över textrutor
+        zIndex: 15
       }}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
-      {/* Markör-ruta - Talbubbla-form */}
+      {/* Sticky Note Marker */}
       <div
         data-comment-marker
-        onClick={handleMarkerClick}
-        onMouseDown={(e) => {
-          // Om kommentaren redan är markerad, stoppa propagation för att öppna redigering
-          if (isSelected && !isEditing) {
-            e.stopPropagation();
+        onClick={(e) => {
+          // Låt klicket propagera till App.jsx för att aktivera verktyget
+          // handleMarkerClick hanterar redigering om kommentaren redan är vald
+          if (!isSelected) {
+            // Om kommentaren inte är vald, låt klicket propagera för att aktivera verktyget
+            return;
           }
-          // Annars låt klick gå igenom för markering i App.jsx
+          handleMarkerClick(e);
+        }}
+        onMouseDown={(e) => {
+          // Låt ALLTID mousedown propagera till App.jsx för drag-funktionalitet
+          // App.jsx behöver uppdatera dragStart med rätt koordinater
+          // Drag startar endast om användaren faktiskt flyttar musen
         }}
         style={{
           width: `${markerSize}px`,
           height: `${markerSize}px`,
-          backgroundColor: '#FFD700', // Mörkare gul färg
-          border: isSelected ? '2px solid #0066ff' : '2px solid #FFC107', // Blå border när vald, annars mörkare gul
-          borderRadius: '3px 3px 3px 0', // Rundade hörn utom nedre vänstra
+          backgroundColor: 'transparent', // Ingen bakgrund, bara ikon
+          border: 'none',
+          borderRadius: '0',
           cursor: isEditing ? 'text' : 'move',
-          boxShadow: isSelected ? '0 0 0 2px #0066ff' : '0 2px 4px rgba(0,0,0,0.2)',
+          boxShadow: 'none',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           transition: 'all 0.2s ease',
           position: 'relative',
-          zIndex: 21, // Högre än popup:en (19) så markören ligger över och är klickbar
-          pointerEvents: 'auto', // Säkerställ att markören är klickbar
-          marginTop: '2px' // Liten offset för talbubbla-effekten
+          zIndex: 21,
+          pointerEvents: 'auto',
+          transform: 'none',
         }}
       >
         {/* Kommentar-ikon */}
-        {!isEditing && (
-          <span style={{ 
-            fontSize: '10px', 
-            color: '#333',
-            fontWeight: 'bold',
-            userSelect: 'none'
-          }}>
-            💬
-          </span>
-        )}
-        {/* Triangulär utskjutning nedåt (talbubbla-pekare) */}
-        <div style={{
-          position: 'absolute',
-          bottom: '-6px',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          width: '0',
-          height: '0',
-          borderLeft: '6px solid transparent',
-          borderRight: '6px solid transparent',
-          borderTop: `6px solid ${isSelected ? '#0066ff' : '#FFD700'}`,
-          zIndex: 22
-        }} />
+        <span style={{ 
+          fontSize: '22px',
+          lineHeight: 1,
+          color: commentBox.backgroundColor || '#333',
+          fontWeight: 900,
+          textShadow: '0 0 1px currentColor',
+          userSelect: 'none'
+        }}>
+          {(() => {
+            const iconType = commentBox.icon || 'speech-bubble';
+            if (iconType === 'speech-bubble') return '💬';
+            if (iconType === 'arrow') return '➜';
+            if (iconType === 'checkmark') return '✔';
+            if (iconType === 'x') return '✖';
+            if (iconType === 'star') return '★';
+            if (iconType === 'key') return '🔑';
+            return '💬'; // Default fallback
+          })()}
+        </span>
       </div>
 
-      {/* Popup som visas vid hover */}
-      {isHovering && !isEditing && localText && (
+      {/* Popup som visas vid hover eller redigering */}
+      {shouldShowPopup && (
         <div
           ref={popupRef}
+          data-comment-popup
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
+          onMouseDown={(e) => {
+            // Stoppa propagation så att klick på popup inte skapar nya kommentarer
+            e.stopPropagation();
+          }}
+          onClick={(e) => {
+            // Stoppa propagation så att klick på popup inte skapar nya kommentarer
+            e.stopPropagation();
+          }}
           style={{
             position: 'absolute',
             top: `${popupPosition.top}px`,
             left: `${popupPosition.left}px`,
-            minWidth: '200px',
+            minWidth: '220px',
             maxWidth: '300px',
-            backgroundColor: '#FFF9C4', // Ljusgul bakgrund
-            borderRadius: '8px 8px 4px 4px', // Rundade hörn, särskilt nedtill
-            boxShadow: '0 2px 8px rgba(0,0,0,0.15)', // Subtila skuggor
-            zIndex: 19, // Lägre än markören (21) så markören ligger över
+            background: createGradient(commentBox.backgroundColor),
+            borderRadius: '2px',
+            boxShadow: '2px 2px 8px rgba(0,0,0,0.3)',
+            zIndex: isEditing ? 20 : 19,
             wordWrap: 'break-word',
             whiteSpace: 'pre-wrap',
             fontSize: '14px',
             lineHeight: '1.4',
             color: '#333',
-            pointerEvents: 'auto', // Tillåt interaktion med popup:en
-            padding: '0'
+            pointerEvents: 'auto',
+            padding: '0',
+            visibility: isStyleCalculationInProgress ? 'hidden' : 'visible',
+            border: 'none'
           }}
         >
-          {/* Rubrik med stäng-knapp */}
+          {/* Rubrik med stäng-knapp - post-it stil */}
           <div style={{
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            padding: '8px 12px',
-            borderBottom: '1px solid rgba(0,0,0,0.1)',
-            backgroundColor: 'rgba(255,255,255,0.3)',
-            borderRadius: '8px 8px 0 0'
+            padding: '8px 10px',
+            borderBottom: '1px solid rgba(0,0,0,0.1)'
           }}>
             <span style={{
               fontSize: '13px',
@@ -258,24 +377,24 @@ export default function CommentBox({
               color: '#333',
               userSelect: 'none'
             }}>
-              Anteckning
+              {t('comments.comment')}
             </span>
             <button
-              onClick={handleClose}
+              onClick={handleDelete}
               onMouseDown={(e) => e.stopPropagation()}
               style={{
                 background: 'none',
                 border: 'none',
                 cursor: 'pointer',
                 fontSize: '16px',
-                color: '#666',
+                color: '#555',
                 padding: '0',
                 width: '20px',
                 height: '20px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                borderRadius: '3px',
+                borderRadius: '2px',
                 transition: 'background-color 0.2s'
               }}
               onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(0,0,0,0.1)'}
@@ -284,125 +403,49 @@ export default function CommentBox({
               ×
             </button>
           </div>
-          {/* Kommentar-text */}
-          <div style={{
-            padding: '10px 12px',
-            fontSize: '14px',
-            lineHeight: '1.4',
-            color: '#333'
-          }}>
-            {localText}
-          </div>
-        </div>
-      )}
 
-      {/* Redigeringsläge */}
-      {isEditing && (
-        <div
-          data-comment-editing
-          onMouseDown={(e) => {
-            e.stopPropagation(); // Stoppa propagation så att klick inte registreras i App.jsx
-          }}
-          onClick={(e) => {
-            e.stopPropagation(); // Stoppa propagation så att klick inte registreras i App.jsx
-          }}
-          style={{
-            position: 'absolute',
-            top: `${popupPosition.top}px`,
-            left: `${popupPosition.left}px`,
-            minWidth: '200px',
-            maxWidth: '300px',
-            backgroundColor: '#FFF9C4', // Ljusgul bakgrund
-            border: '2px solid #0066ff',
-            borderRadius: '8px 8px 4px 4px', // Rundade hörn, särskilt nedtill
-            boxShadow: '0 2px 8px rgba(0,0,0,0.15)', // Subtila skuggor
-            zIndex: 20,
-            padding: '0'
-          }}
-        >
-          {/* Rubrik med stäng-knapp */}
-          <div style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            padding: '8px 12px',
-            borderBottom: '1px solid rgba(0,0,0,0.1)',
-            backgroundColor: 'rgba(255,255,255,0.3)',
-            borderRadius: '8px 8px 0 0'
-          }}>
-            <span style={{
-              fontSize: '13px',
-              fontWeight: 'bold',
-              color: '#333',
-              userSelect: 'none'
-            }}>
-              Anteckning
-            </span>
-            <button
-              onClick={handleClose}
-              onMouseDown={(e) => e.stopPropagation()}
-              style={{
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                fontSize: '16px',
-                color: '#666',
-                padding: '0',
-                width: '20px',
-                height: '20px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                borderRadius: '3px',
-                transition: 'background-color 0.2s'
-              }}
-              onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(0,0,0,0.1)'}
-              onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
-            >
-              ×
-            </button>
-          </div>
-          {/* Textarea */}
-          <div style={{ padding: '10px 12px' }}>
-            <textarea
-              ref={textRef}
-              value={localText}
-              onChange={handleTextChange}
-              onBlur={handleBlur}
-              onKeyDown={handleKeyDown}
-              onMouseDown={(e) => {
-                e.stopPropagation(); // Stoppa propagation så att klick inte registreras i App.jsx
-              }}
-              onClick={(e) => {
-                e.stopPropagation(); // Stoppa propagation så att klick inte registreras i App.jsx
-              }}
-              placeholder="Skriv din kommentar..."
-              style={{
-                width: '100%',
-                minHeight: '80px',
-                maxHeight: '200px',
-                padding: '8px',
-                border: '1px solid rgba(0,0,0,0.2)',
-                borderRadius: '3px',
-                fontSize: '14px',
-                fontFamily: 'inherit',
-                resize: 'vertical',
-                outline: 'none',
-                backgroundColor: '#fff'
-              }}
-            />
-            <div style={{ 
-              marginTop: '8px', 
-              fontSize: '12px', 
-              color: '#666',
-              fontStyle: 'italic'
-            }}>
-              Tryck Enter för att spara, Esc för att avbryta
-            </div>
+          {/* Kommentar-innehåll - post-it stil */}
+          <div style={{ padding: '10px' }}>
+            {isEditing ? (
+              <textarea
+                ref={textRef}
+                value={localText}
+                onChange={handleTextChange}
+                onBlur={handleBlur}
+                onKeyDown={handleKeyDown}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+                placeholder={t('comments.writeComment')}
+                style={{
+                  width: '100%',
+                  minHeight: '60px',
+                  maxHeight: '150px',
+                  padding: '0',
+                  border: 'none',
+                  fontSize: '14px',
+                  fontFamily: 'inherit',
+                  resize: 'none',
+                  outline: 'none',
+                  backgroundColor: 'transparent', // Transparent för att visa post-it färg
+                  color: '#333', // Mörk text
+                  lineHeight: '1.5'
+                }}
+              />
+            ) : (
+              <div style={{
+                minHeight: '30px',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                color: '#333',
+                lineHeight: '1.5'
+              }}>
+                {localText || <span style={{ color: '#666', fontStyle: 'italic' }}>{t('comments.writeComment')}</span>}
+              </div>
+            )}
+
           </div>
         </div>
       )}
     </div>
   );
 }
-

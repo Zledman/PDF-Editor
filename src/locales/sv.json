@@ -2,6 +2,7 @@
   "toolbar": {
     "newPdf": "Ny PDF",
     "addText": "Lägg till text",
+    "editText": "Redigera text",
     "whiteout": "Whiteout",
     "copyArea": "Kopiera område",
     "selectArea": "(Välj område)",
@@ -23,7 +24,30 @@
     "exportPdf": "Exportera PDF",
     "download": "Ladda ner",
     "language": "Språk",
-    "pageManagement": "Sidhantering"
+    "pageManagement": "Sidhantering",
+    "pageLayout": "Sidlayout",
+    "pageMode": "Sidläge",
+    "pageTransition": "Sidövergång",
+    "pageRotation": "Sidrotation",
+    "layoutSingle": "En sida",
+    "layoutDouble": "Två sidor",
+    "layoutAuto": "Auto",
+    "layoutAutoHint": "Auto växlar mellan en/två sidor beroende på bredd.",
+    "navScroll": "Scroll",
+    "navPaged": "Sida",
+    "rotateLeft": "Rotera vänster",
+    "rotateRight": "Rotera höger",
+    "comment": "Kommentar",
+    "image": "Bild",
+    "imageHint": "Välj en bild (PNG/JPG) och placera på sidan",
+    "imageReady": "Dra för att placera bilden",
+    "mode": "Läge",
+    "highlightRect": "Markera yta",
+    "highlightFreehand": "Frihand highlight",
+    "highlightColor": "Highlight-färg",
+    "opacity": "Opacitet",
+    "stroke": "Bredd",
+    "eraser": "Raderare"
   },
   "textSidebar": {
     "size": "Storlek",
@@ -48,6 +72,17 @@
     "selectColor": "Välj färg",
     "preview": "Förhandsgranskning"
   },
+  "commentSidebar": {
+    "color": "Färg",
+    "icon": "Ikon",
+    "speechBubble": "Textkommentar",
+    "arrow": "Riktningsmarkering",
+    "checkmark": "Godkännande",
+    "x": "Avvisande",
+    "star": "Viktig markering",
+    "key": "Privat/Konfidentiell",
+    "preview": "Förhandsgranskning"
+  },
   "colors": {
     "black": "Svart",
     "white": "Vit",
@@ -65,10 +100,65 @@
   "landingPage": {
     "title": "PDF Editor",
     "subtitle": "Redigera dina PDF-filer med text, whiteout och kopiera område-verktyg",
+    "getStarted": "Kom igång",
+    "openUploader": "Öppna uppladdning",
+    "chooseFile": "Välj fil",
     "selectPdfFile": "Vänligen välj en PDF-fil",
     "dropPdfFile": "Vänligen släpp en PDF-fil",
     "dragDrop": "Dra och släpp en PDF-fil här",
-    "orClick": "eller klicka för att välja"
+    "orClick": "eller klicka för att välja",
+    "createNew": "Skapa ny PDF",
+    "createNewHint": "Skapa ett tomt dokument och börja från grunden",
+    "footer": "Stöd för flera sidor • Zoom-funktion • Undo/Redo",
+    "comingSoon": "Kommer snart",
+    "nav": {
+      "ariaLabel": "Huvudmeny",
+      "allPdfTools": "All PDF tools",
+      "pdfConverter": "PDF Converter",
+      "pdfEditor": "PDF Editor",
+      "forms": "Forms",
+      "translatePdf": "Translate PDF",
+      "login": "Logga in"
+    },
+    "tools": {
+      "categories": {
+        "organize": "ORGANIZE PDF",
+        "optimize": "OPTIMIZE PDF",
+        "convertTo": "CONVERT TO PDF",
+        "convertFrom": "CONVERT FROM PDF",
+        "edit": "EDIT PDF",
+        "security": "PDF SECURITY"
+      },
+      "mergePdf": "Merge PDF",
+      "splitPdf": "Split PDF",
+      "removePages": "Remove pages",
+      "extractPages": "Extract pages",
+      "organizePdf": "Organize PDF",
+      "scanToPdf": "Scan to PDF",
+      "compressPdf": "Compress PDF",
+      "repairPdf": "Repair PDF",
+      "ocrPdf": "OCR PDF",
+      "jpgToPdf": "JPG to PDF",
+      "wordToPdf": "WORD to PDF",
+      "powerpointToPdf": "POWERPOINT to PDF",
+      "excelToPdf": "EXCEL to PDF",
+      "htmlToPdf": "HTML to PDF",
+      "pdfToJpg": "PDF to JPG",
+      "pdfToWord": "PDF to WORD",
+      "pdfToPowerpoint": "PDF to POWERPOINT",
+      "pdfToExcel": "PDF to EXCEL",
+      "pdfToPdfA": "PDF to PDF/A",
+      "rotatePdf": "Rotate PDF",
+      "addPageNumbers": "Add page numbers",
+      "addWatermark": "Add watermark",
+      "cropPdf": "Crop PDF",
+      "editPdf": "Edit PDF",
+      "unlockPdf": "Unlock PDF",
+      "protectPdf": "Protect PDF",
+      "signPdf": "Sign PDF",
+      "redactPdf": "Redact PDF",
+      "comparePdf": "Compare PDF"
+    }
   },
   "floatingControlBar": {
     "page": "Sida",
@@ -90,7 +180,11 @@
     "unknownFormat": "Okänt filformat",
     "rotateFailed": "Rotation misslyckades",
     "deleteFailed": "Borttagning misslyckades",
-    "addPageFailed": "Tillägg av sida misslyckades"
+    "addPageFailed": "Tillägg av sida misslyckades",
+    "createPdfFailed": "Kunde inte skapa ny PDF",
+    "imageLoadFailed": "Kunde inte ladda bild",
+    "movePagesFailed": "Flytt av sidor misslyckades",
+    "duplicatePagesFailed": "Duplicering misslyckades"
   },
   "loading": {
     "loadingPdf": "Laddar PDF...",
@@ -99,7 +193,11 @@
     "exportingImages": "Exporterar bilder...",
     "rotatingPages": "Roterar sidor...",
     "deletingPages": "Tar bort sidor...",
-    "addingPage": "Lägger till sida..."
+    "addingPage": "Lägger till sida...",
+    "creatingPdf": "Skapar ny PDF...",
+    "loadingImage": "Laddar bild...",
+    "movingPages": "Flyttar sidor...",
+    "duplicatingPages": "Duplicerar sidor..."
   },
   "success": {
     "pdfLoaded": "PDF laddad framgångsrikt",
@@ -108,6 +206,11 @@
     "pagesRotated": "{{count}} sida/sidor roterade",
     "pagesDeleted": "{{count}} sida/sidor borttagna",
     "pageAdded": "Sida tillagd",
+    "createdPdf": "Ny PDF skapad",
+    "imageReady": "Bild laddad - dra för att placera",
+    "imagePlaced": "Bild placerad",
+    "pagesMoved": "Sidor flyttade",
+    "pagesDuplicated": "Sidor duplicerade",
     "copied": "Element kopierat",
     "pasted": "{{count}} element klistrade in"
   },
@@ -135,7 +238,25 @@
     "addPages": "Lägg till sidor",
     "addBlankPage": "Lägg till tom sida",
     "addFromFile": "Lägg till från fil",
-    "confirmDelete": "Vill du verkligen ta bort {{count}} sida/sidor?"
+    "confirmDelete": "Vill du verkligen ta bort {{count}} sida/sidor?",
+    "organize": "Ordna sidor",
+    "duplicate": "Duplicera",
+    "moveUp": "Flytta upp",
+    "moveDown": "Flytta ner"
+  },
+  "comments": {
+    "addComment": "Kommentar",
+    "comment": "Kommentar",
+    "writeComment": "Skriv din kommentar...",
+    "reply": "Svara",
+    "replyPlaceholder": "Skriv ett svar...",
+    "delete": "Ta bort",
+    "edit": "Redigera",
+    "save": "Spara",
+    "cancel": "Avbryta",
+    "pressEnter": "Tryck Enter för att spara, Esc för att avbryta",
+    "noReplies": "Inga svar ännu",
+    "replies": "{{count}} svar"
   }
 }
 

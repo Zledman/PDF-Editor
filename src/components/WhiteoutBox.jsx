@@ -8,7 +8,9 @@ export default function WhiteoutBox({
   onDelete,
   isSelected,
   tool = null,
-  onResizeStart
+  onResizeStart,
+  onRotationStart,
+  whiteoutBoxIndex = null
 }) {
   const containerRef = useRef(null);
 
@@ -40,20 +42,22 @@ export default function WhiteoutBox({
 
   // Resize handles (endast när vald OCH whiteout-verktyget är aktivt)
   const handleSize = 8;
+  const handleOffset = handleSize; // flytta handles utanför rutan
   const handles = isSelected && tool === 'whiteout' ? [
-    { position: 'nw', style: { top: -handleSize/2, left: -handleSize/2, cursor: 'nw-resize' } },
-    { position: 'n', style: { top: -handleSize/2, left: '50%', marginLeft: -handleSize/2, cursor: 'n-resize' } },
-    { position: 'ne', style: { top: -handleSize/2, right: -handleSize/2, cursor: 'ne-resize' } },
-    { position: 'e', style: { top: '50%', right: -handleSize/2, marginTop: -handleSize/2, cursor: 'e-resize' } },
-    { position: 'se', style: { bottom: -handleSize/2, right: -handleSize/2, cursor: 'se-resize' } },
-    { position: 's', style: { bottom: -handleSize/2, left: '50%', marginLeft: -handleSize/2, cursor: 's-resize' } },
-    { position: 'sw', style: { bottom: -handleSize/2, left: -handleSize/2, cursor: 'sw-resize' } },
-    { position: 'w', style: { top: '50%', left: -handleSize/2, marginTop: -handleSize/2, cursor: 'w-resize' } }
+    { position: 'nw', style: { top: -handleOffset, left: -handleOffset, cursor: 'nw-resize' } },
+    { position: 'n', style: { top: -handleOffset, left: '50%', marginLeft: -handleSize/2, cursor: 'n-resize' } },
+    { position: 'ne', style: { top: -handleOffset, right: -handleOffset, cursor: 'ne-resize' } },
+    { position: 'e', style: { top: '50%', right: -handleOffset, marginTop: -handleSize/2, cursor: 'e-resize' } },
+    { position: 'se', style: { bottom: -handleOffset, right: -handleOffset, cursor: 'se-resize' } },
+    { position: 's', style: { bottom: -handleOffset, left: '50%', marginLeft: -handleSize/2, cursor: 's-resize' } },
+    { position: 'sw', style: { bottom: -handleOffset, left: -handleOffset, cursor: 'sw-resize' } },
+    { position: 'w', style: { top: '50%', left: -handleOffset, marginTop: -handleSize/2, cursor: 'w-resize' } }
   ] : [];
 
   return (
     <div
       ref={containerRef}
+      data-whiteout-container-index={whiteoutBoxIndex}
       style={{
         position: 'absolute',
         left: `${rectPx.x}px`,
@@ -67,6 +71,9 @@ export default function WhiteoutBox({
         opacity: 0.9,
         zIndex: 2, // Whiteout boxes ska ligga under text boxes
         pointerEvents: (tool === null || tool === 'whiteout') ? 'auto' : 'none' // Tillåt klick när tool === null (för selektion) eller när whiteout-verktyget är aktivt
+        ,
+        transform: `rotate(${whiteoutBox.rotation || 0}deg)`,
+        transformOrigin: 'center'
       }}
       onMouseDown={(tool === null || tool === 'whiteout') ? handleMouseDown : undefined}
     >
@@ -93,6 +100,51 @@ export default function WhiteoutBox({
           }}
         />
       ))}
+
+      {/* Linje till rotationshandtaget */}
+      {isSelected && tool === 'whiteout' && (
+        <div
+          style={{
+            position: 'absolute',
+            left: '50%',
+            top: '100%',
+            marginLeft: -1,
+            marginTop: -handleOffset,
+            width: '2px',
+            height: `${30 + handleOffset}px`,
+            backgroundColor: '#ff6600',
+            pointerEvents: 'none',
+            zIndex: 9
+          }}
+        />
+      )}
+
+      {/* Rotationshandtag */}
+      {isSelected && tool === 'whiteout' && (
+        <div
+          data-rotation-handle
+          style={{
+            position: 'absolute',
+            left: '50%',
+            top: '100%',
+            marginLeft: -handleSize / 2,
+            marginTop: 30,
+            width: `${handleSize}px`,
+            height: `${handleSize}px`,
+            backgroundColor: '#ff6600',
+            border: '1px solid #fff',
+            borderRadius: '2px',
+            cursor: 'grab',
+            zIndex: 10
+          }}
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            if (onRotationStart) {
+              onRotationStart(e);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

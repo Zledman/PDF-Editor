@@ -2,6 +2,7 @@
   "toolbar": {
     "newPdf": "New PDF",
     "addText": "Add Text",
+    "editText": "Edit Text",
     "whiteout": "Whiteout",
     "copyArea": "Copy Area",
     "selectArea": "(Select Area)",
@@ -23,7 +24,30 @@
     "exportPdf": "Export PDF",
     "download": "Download",
     "language": "Language",
-    "pageManagement": "Page Management"
+    "pageManagement": "Page Management",
+    "pageLayout": "Page layout",
+    "pageMode": "Page mode",
+    "pageTransition": "Page transition",
+    "pageRotation": "Page rotation",
+    "layoutSingle": "Single",
+    "layoutDouble": "Double",
+    "layoutAuto": "Auto",
+    "layoutAutoHint": "Auto switches between single/double depending on available width.",
+    "navScroll": "Scroll",
+    "navPaged": "Page",
+    "rotateLeft": "Rotate left",
+    "rotateRight": "Rotate right",
+    "comment": "Comment",
+    "image": "Image",
+    "imageHint": "Choose an image (PNG/JPG) and place it on the page",
+    "imageReady": "Drag to place the image",
+    "mode": "Mode",
+    "highlightRect": "Highlight area",
+    "highlightFreehand": "Freehand highlight",
+    "highlightColor": "Highlight color",
+    "opacity": "Opacity",
+    "stroke": "Width",
+    "eraser": "Eraser"
   },
   "textSidebar": {
     "size": "Size",
@@ -48,6 +72,17 @@
     "selectColor": "Select Color",
     "preview": "Preview"
   },
+  "commentSidebar": {
+    "color": "Color",
+    "icon": "Icon",
+    "speechBubble": "Text comment",
+    "arrow": "Direction marker",
+    "checkmark": "Approval",
+    "x": "Rejection",
+    "star": "Important",
+    "key": "Private/Confidential",
+    "preview": "Preview"
+  },
   "colors": {
     "black": "Black",
     "white": "White",
@@ -65,10 +100,65 @@
   "landingPage": {
     "title": "PDF Editor",
     "subtitle": "Edit your PDF files with text, whiteout and copy area tools",
+    "getStarted": "Get started",
+    "openUploader": "Open uploader",
+    "chooseFile": "Choose file",
     "selectPdfFile": "Please select a PDF file",
     "dropPdfFile": "Please drop a PDF file",
     "dragDrop": "Drag and drop a PDF file here",
-    "orClick": "or click to select"
+    "orClick": "or click to select",
+    "createNew": "Create new PDF",
+    "createNewHint": "Create a blank document and start from scratch",
+    "footer": "Multi-page support • Zoom • Undo/Redo",
+    "comingSoon": "Coming soon",
+    "nav": {
+      "ariaLabel": "Main menu",
+      "allPdfTools": "All PDF tools",
+      "pdfConverter": "PDF Converter",
+      "pdfEditor": "PDF Editor",
+      "forms": "Forms",
+      "translatePdf": "Translate PDF",
+      "login": "Log in"
+    },
+    "tools": {
+      "categories": {
+        "organize": "ORGANIZE PDF",
+        "optimize": "OPTIMIZE PDF",
+        "convertTo": "CONVERT TO PDF",
+        "convertFrom": "CONVERT FROM PDF",
+        "edit": "EDIT PDF",
+        "security": "PDF SECURITY"
+      },
+      "mergePdf": "Merge PDF",
+      "splitPdf": "Split PDF",
+      "removePages": "Remove pages",
+      "extractPages": "Extract pages",
+      "organizePdf": "Organize PDF",
+      "scanToPdf": "Scan to PDF",
+      "compressPdf": "Compress PDF",
+      "repairPdf": "Repair PDF",
+      "ocrPdf": "OCR PDF",
+      "jpgToPdf": "JPG to PDF",
+      "wordToPdf": "WORD to PDF",
+      "powerpointToPdf": "POWERPOINT to PDF",
+      "excelToPdf": "EXCEL to PDF",
+      "htmlToPdf": "HTML to PDF",
+      "pdfToJpg": "PDF to JPG",
+      "pdfToWord": "PDF to WORD",
+      "pdfToPowerpoint": "PDF to POWERPOINT",
+      "pdfToExcel": "PDF to EXCEL",
+      "pdfToPdfA": "PDF to PDF/A",
+      "rotatePdf": "Rotate PDF",
+      "addPageNumbers": "Add page numbers",
+      "addWatermark": "Add watermark",
+      "cropPdf": "Crop PDF",
+      "editPdf": "Edit PDF",
+      "unlockPdf": "Unlock PDF",
+      "protectPdf": "Protect PDF",
+      "signPdf": "Sign PDF",
+      "redactPdf": "Redact PDF",
+      "comparePdf": "Compare PDF"
+    }
   },
   "floatingControlBar": {
     "page": "Page",
@@ -90,7 +180,11 @@
     "unknownFormat": "Unknown file format",
     "rotateFailed": "Rotation failed",
     "deleteFailed": "Deletion failed",
-    "addPageFailed": "Adding page failed"
+    "addPageFailed": "Adding page failed",
+    "createPdfFailed": "Could not create new PDF",
+    "imageLoadFailed": "Could not load image",
+    "movePagesFailed": "Moving pages failed",
+    "duplicatePagesFailed": "Duplicating pages failed"
   },
   "loading": {
     "loadingPdf": "Loading PDF...",
@@ -99,7 +193,11 @@
     "exportingImages": "Exporting images...",
     "rotatingPages": "Rotating pages...",
     "deletingPages": "Deleting pages...",
-    "addingPage": "Adding page..."
+    "addingPage": "Adding page...",
+    "creatingPdf": "Creating PDF...",
+    "loadingImage": "Loading image...",
+    "movingPages": "Moving pages...",
+    "duplicatingPages": "Duplicating pages..."
   },
   "success": {
     "pdfLoaded": "PDF loaded successfully",
@@ -108,6 +206,11 @@
     "pagesRotated": "{{count}} page/pages rotated",
     "pagesDeleted": "{{count}} page/pages deleted",
     "pageAdded": "Page added",
+    "createdPdf": "New PDF created",
+    "imageReady": "Image loaded - drag to place",
+    "imagePlaced": "Image placed",
+    "pagesMoved": "Pages moved",
+    "pagesDuplicated": "Pages duplicated",
     "copied": "Element copied",
     "pasted": "{{count}} element(s) pasted"
   },
@@ -135,7 +238,25 @@
     "addPages": "Add Pages",
     "addBlankPage": "Add Blank Page",
     "addFromFile": "Add From File",
-    "confirmDelete": "Are you sure you want to delete {{count}} page/pages?"
+    "confirmDelete": "Are you sure you want to delete {{count}} page/pages?",
+    "organize": "Organize pages",
+    "duplicate": "Duplicate",
+    "moveUp": "Move up",
+    "moveDown": "Move down"
+  },
+  "comments": {
+    "addComment": "Comment",
+    "comment": "Comment",
+    "writeComment": "Write your comment...",
+    "reply": "Reply",
+    "replyPlaceholder": "Write a reply...",
+    "delete": "Delete",
+    "edit": "Edit",
+    "save": "Save",
+    "cancel": "Cancel",
+    "pressEnter": "Press Enter to save, Esc to cancel",
+    "noReplies": "No replies yet",
+    "replies": "{{count}} replies"
   }
 }
 
