@@ -8,6 +8,18 @@ export default defineConfig({
   },
   worker: {
     format: 'es'
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'pdf-lib': ['pdf-lib'],
+          'pdfjs': ['pdfjs-dist'],
+          'office': ['xlsx', 'docx', 'pptxgenjs'],
+          'react': ['react', 'react-dom', 'react-i18next', 'i18next']
+        }
+      }
+    }
   }
 })
 
