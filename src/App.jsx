@@ -9,11 +9,29 @@ import ShapeBox from './components/ShapeBox';
 import CommentBox from './components/CommentBox';
 import LandingPage from './components/LandingPage';
 import ThumbnailSidebar from './components/ThumbnailSidebar';
+import OutlineSidebar from './components/OutlineSidebar';
+import CommentListSidebar from './components/CommentListSidebar';
+import BookmarkSidebar from './components/BookmarkSidebar';
+import LinkBox from './components/LinkBox';
+import LinkSettingsPopover from './components/LinkSettingsPopover';
 import FloatingControlBar from './components/FloatingControlBar';
 import DownloadModal from './components/DownloadModal';
 import PageManagementPanel from './components/PageManagementPanel';
 import ToastContainer, { useToast } from './components/ToastNotification';
 import LoadingSpinner from './components/LoadingSpinner';
+import PdfToolRunnerModal from './components/PdfToolRunnerModal';
+import OcrBanner from './components/OcrBanner';
+import UploadProgress from './components/UploadProgress';
+import TranslatePdfView from './components/TranslatePdfView';
+import CropOverlay from './components/CropOverlay';
+import CropConfirmModal from './components/CropConfirmModal';
+import EditorToolbar from './components/EditorToolbar';
+import SettingsPopover from './components/SettingsPopover';
+import MobileWarningBanner from './components/MobileWarningBanner';
+import LanguageSelector from './components/LanguageSelector';
+import ThemeToggle from './components/ThemeToggle';
+import './components/AppZoomSlider.css';
+import PricingModal from './components/PricingModal';
 import { exportPDF } from './services/pdfExport';
 import { loadPDF } from './services/pdfService';
 import { exportAsPDF, exportAsPNG, exportAsJPG, exportAsExcel, exportAsWord, exportAsPPTX } from './services/fileExport';
@@ -28,6 +46,11 @@ if (typeof window !== 'undefined') {
 
 export default function App() {
   const { t, i18n } = useTranslation();
+
+  // Debug render cycle
+  // Debug render cycle - Log removed
+  // console.log('App: COMPONENT RENDER START');
+
   const { toasts, removeToast, success, error, info, warning } = useToast();
   const [pdfDoc, setPdfDoc] = useState(null);
   const [pdfData, setPdfData] = useState(null); // Spara original PDF data för export
@@ -39,16 +62,22 @@ export default function App() {
   const [effectiveLayout, setEffectiveLayout] = useState('single'); // 'single' | 'double' (auto resolves into this)
   const [navMode, setNavMode] = useState('scroll'); // 'scroll' | 'paged'
   const [canScrollCurrentPage, setCanScrollCurrentPage] = useState(false); // for paged mode: show scrollbar only when needed
-  const [zoom, setZoom] = useState(1.0);
+  const [zoom, setZoom] = useState(2.0);
   const [tool, setTool] = useState(null); // 'text', 'whiteout', 'patch', 'pan', eller null för inget verktyg
   const [patchMode, setPatchMode] = useState('select'); // 'select' eller 'place'
+
   const [sourceRect, setSourceRect] = useState(null);
   const [sourcePageIndex, setSourcePageIndex] = useState(null); // Vilken sida som är källan för patchen
+  // Crop state
+  const [cropRegion, setCropRegion] = useState(null);
+  const [activeCropPage, setActiveCropPage] = useState(null);
+  const [showCropConfirmModal, setShowCropConfirmModal] = useState(false);
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0, scrollLeft: 0, scrollTop: 0 });
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('');
-  
+  const [uploadProgress, setUploadProgress] = useState(0); // 0-100 for upload progress indicator
+
   // Text-inställningar
   const [textSettings, setTextSettings] = useState({
     fontSizePt: 12,
@@ -57,11 +86,11 @@ export default function App() {
     fontWeight: 'normal',
     fontStyle: 'normal'
   });
-  
+
   // Lokal state för font size input (tillåter användaren att skriva fritt)
   const [fontSizeInput, setFontSizeInput] = useState('12');
   const fontSizeInputRef = useRef(null);
-  
+
   // Synka fontSizeInput när textSettings.fontSizePt ändras (utom när användaren skriver)
   useEffect(() => {
     // Uppdatera bara om input-fältet inte är fokuserat (för att undvika att störa användaren när de skriver)
@@ -70,7 +99,7 @@ export default function App() {
       setFontSizeInput(String(currentValue));
     }
   }, [textSettings.fontSizePt]);
-  
+
   const [textBoxes, setTextBoxes] = useState([]);
   const [whiteoutBoxes, setWhiteoutBoxes] = useState([]);
   const [patchBoxes, setPatchBoxes] = useState([]);
@@ -78,6 +107,7 @@ export default function App() {
   const [shapeBoxes, setShapeBoxes] = useState([]);
   const [highlightStrokes, setHighlightStrokes] = useState([]); // Frihand-markeringar
   const [commentBoxes, setCommentBoxes] = useState([]);
+  const [linkBoxes, setLinkBoxes] = useState([]); // Array of { id, rect, pageIndex, linkType: 'url'|'page', value: string }
   const [selectedElement, setSelectedElement] = useState(null);
   const [selectedType, setSelectedType] = useState(null);
   const [showColorPalette, setShowColorPalette] = useState(false);
@@ -85,16 +115,25 @@ export default function App() {
   const [showShapeStrokeColorPalette, setShowShapeStrokeColorPalette] = useState(false);
   const [showShapeFillColorPalette, setShowShapeFillColorPalette] = useState(false);
   const [showShapeTypeDropdown, setShowShapeTypeDropdown] = useState(false);
+
   const [sidebarWidth, setSidebarWidth] = useState(200); // Bredd på thumbnail sidebar
+  const [sidebarMode, setSidebarMode] = useState('thumbnails'); // 'thumbnails', 'outline', 'comments', 'bookmarks'
+
+  const [pdfOutline, setPdfOutline] = useState([]); // Innehållsförteckning
+  const [bookmarks, setBookmarks] = useState([]); // Array of { id, pageIndex, title, timestamp }
   const [showDownloadModal, setShowDownloadModal] = useState(false);
   const [showPageManagementPanel, setShowPageManagementPanel] = useState(false);
-  
+  const [toolRunner, setToolRunner] = useState({ isOpen: false, toolKey: null, initialFiles: null });
+  const [translateView, setTranslateView] = useState({ isOpen: false, pdfBuffer: null, fileName: '', targetLang: 'sv' });
+  const [pdfFileName, setPdfFileName] = useState('Untitled'); // Editable document filename
+  const [showPricingModal, setShowPricingModal] = useState(false);
+
   // Clipboard för kopiera/klistra in
   const [clipboard, setClipboard] = useState(null); // { type: 'text'|'whiteout'|'patch'|'shape', elements: [...], sourcePage: number }
-  
+
   // Whiteout-inställningar
   const [whiteoutColor, setWhiteoutColor] = useState('#FFFFFF');
-  
+
   // Kommentar-inställningar
   const [commentSettings, setCommentSettings] = useState({
     backgroundColor: '#FFEB3B', // Färg för markör och popup-bakgrund
@@ -118,8 +157,39 @@ export default function App() {
   const [isErasing, setIsErasing] = useState(false);
   const [hasErasedThisDrag, setHasErasedThisDrag] = useState(false);
   const [eraserCursorColor, setEraserCursorColor] = useState('rgba(255,255,255,0.9)');
+
+  // Pen tool state
+  const [penStrokes, setPenStrokes] = useState([]); // Frihand-penn-streck
+  const [penSettings, setPenSettings] = useState({
+    color: '#000000',
+    opacity: 1.0,
+    strokeWidth: 3
+  });
+  const [currentPenStroke, setCurrentPenStroke] = useState(null); // Live-stroke while drawing
+  const [penCursor, setPenCursor] = useState(null); // { pageNum, x, y }
+
   const [hoveredTextBoxIndex, setHoveredTextBoxIndex] = useState(null); // För hovring i edit-text-läge
   const [textEditTrigger, setTextEditTrigger] = useState(null); // Triggar redigering av befintlig textruta
+  const [showOcrBanner, setShowOcrBanner] = useState(false); // Visa banner för skannade PDF:er
+
+  // PDF text search state
+  const [showSearchPanel, setShowSearchPanel] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]); // Array of { pageIndex, matchIndex, text }
+  const [currentSearchIndex, setCurrentSearchIndex] = useState(0);
+  const searchInputRef = useRef(null);
+
+  // Settings
+  const [settings, setSettings] = useState({
+    spellCheckEnabled: true,
+    smartGuidesEnabled: true,
+    navigationToolbarEnabled: true
+  });
+  const [showSettingsSidebar, setShowSettingsSidebar] = useState(false);
+
+  const handleSettingChange = useCallback((key, value) => {
+    setSettings(prev => ({ ...prev, [key]: value }));
+  }, []);
 
   const hexToRgba = (hex, opacity = 1) => {
     if (!hex) return `rgba(255,255,0,${opacity})`;
@@ -130,7 +200,247 @@ export default function App() {
     const b = parseInt(parsed.substring(4, 6), 16);
     return `rgba(${r}, ${g}, ${b}, ${opacity})`;
   };
-  
+
+  // PDF text search function
+  const performSearch = useCallback(async (query) => {
+    if (!pdfDoc || !query.trim()) {
+      setSearchResults([]);
+      setCurrentSearchIndex(0);
+      return;
+    }
+
+    const results = [];
+    const queryLower = query.toLowerCase();
+
+    for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+      try {
+        const page = await pdfDoc.getPage(pageNum);
+        const viewport = page.getViewport({ scale: 1.0 });
+        const textContent = await page.getTextContent();
+
+        // Build a list of text items with their positions
+        const items = textContent.items;
+        let runningText = '';
+        const charToItemMap = []; // Maps character index to item info
+
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          const str = item.str;
+          for (let j = 0; j < str.length; j++) {
+            charToItemMap.push({
+              itemIndex: i,
+              charIndex: j,
+              item: item
+            });
+          }
+          runningText += str;
+          // Add space between items (as we did before)
+          charToItemMap.push({ itemIndex: i, charIndex: -1, item: null }); // space
+          runningText += ' ';
+        }
+
+        // Find all matches on this page
+        let searchPos = 0;
+        let matchIndex = 0;
+        while (true) {
+          const pos = runningText.toLowerCase().indexOf(queryLower, searchPos);
+          if (pos === -1) break;
+
+          // Find the text items that contain this match
+          const matchChars = [];
+          for (let i = pos; i < pos + query.length && i < charToItemMap.length; i++) {
+            const info = charToItemMap[i];
+            if (info && info.item) {
+              matchChars.push(info);
+            }
+          }
+
+          // Get bounding boxes for matched characters
+          // Group consecutive characters from the same item together
+          const highlights = [];
+
+          if (matchChars.length > 0) {
+            let currentItemIndex = -1;
+            let currentItem = null;
+            let startCharIndex = 0;
+            let endCharIndex = 0;
+
+            for (let i = 0; i <= matchChars.length; i++) {
+              const info = i < matchChars.length ? matchChars[i] : null;
+              const isNewItem = !info || info.itemIndex !== currentItemIndex;
+
+              if (isNewItem && currentItem) {
+                // Calculate the highlight for the previous range
+                const item = currentItem;
+                const transform = item.transform;
+                const itemX = transform[4];
+                const itemY = transform[5];
+                const itemWidth = item.width || 50;
+                const itemHeight = item.height || 12;
+                const itemStr = item.str || '';
+
+                // Calculate character width (approximate) - use 0.85 factor for better proportional font accuracy
+                const avgCharWidth = itemStr.length > 0 ? itemWidth / itemStr.length : itemWidth;
+                const charWidth = avgCharWidth * 0.95; // Slightly narrower for better fit
+
+                // Calculate the x offset and width for this specific character range
+                // Add small offset to center the highlight better
+                const highlightX = itemX + (startCharIndex * avgCharWidth) + (avgCharWidth * 0.05);
+                const highlightWidth = (endCharIndex - startCharIndex + 1) * charWidth;
+
+                // Convert to top-left origin (PDF uses bottom-left)
+                const rectY = viewport.height - itemY - itemHeight;
+
+                highlights.push({
+                  x: highlightX,
+                  y: rectY + 1, // Slight vertical adjustment
+                  width: Math.max(highlightWidth, 6), // Minimum width of 6 for visibility
+                  height: itemHeight + 2 // Less vertical padding
+                });
+              }
+
+              if (info) {
+                if (info.itemIndex !== currentItemIndex) {
+                  // Start a new item
+                  currentItemIndex = info.itemIndex;
+                  currentItem = info.item;
+                  startCharIndex = info.charIndex;
+                  endCharIndex = info.charIndex;
+                } else {
+                  // Extend the current range
+                  endCharIndex = info.charIndex;
+                }
+              }
+            }
+          }
+
+          results.push({
+            pageIndex: pageNum - 1,
+            pageNum: pageNum,
+            matchIndex: matchIndex++,
+            position: pos,
+            text: runningText.substring(Math.max(0, pos - 20), pos + query.length + 20),
+            highlights: highlights // Array of { x, y, width, height } in PDF points
+          });
+          searchPos = pos + 1;
+        }
+      } catch (err) {
+        console.warn(`Could not search page ${pageNum}:`, err);
+      }
+    }
+
+    setSearchResults(results);
+    setCurrentSearchIndex(results.length > 0 ? 0 : -1);
+
+    // Navigate to first result
+    if (results.length > 0) {
+      const firstResult = results[0];
+      setCurrentPage(firstResult.pageNum);
+    }
+  }, [pdfDoc]);
+
+  const goToSearchResult = useCallback((index) => {
+    if (searchResults.length === 0) return;
+
+    const clampedIndex = Math.max(0, Math.min(index, searchResults.length - 1));
+    setCurrentSearchIndex(clampedIndex);
+
+    const result = searchResults[clampedIndex];
+    if (result) {
+      setCurrentPage(result.pageNum);
+
+      // Scroll till sökresultatet efter en kort fördröjning för att låta sidan rendera
+      setTimeout(() => {
+        const highlightElement = document.querySelector(`[data-search-result-index="${clampedIndex}"]`);
+        if (highlightElement) {
+          // Kontrollera om elementet redan är synligt i viewport
+          const rect = highlightElement.getBoundingClientRect();
+          const isVisible = rect.top >= 100 && rect.bottom <= (window.innerHeight - 100);
+
+          if (!isVisible) {
+            highlightElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        } else {
+          // Fallback: scrolla till sidan om highlight-elementet inte hittas
+          const pageContainer = document.querySelector(`[data-page-num="${result.pageNum}"]`);
+          if (pageContainer) {
+            const rect = pageContainer.getBoundingClientRect();
+            const isVisible = rect.top >= 0 && rect.bottom <= window.innerHeight;
+            if (!isVisible) {
+              pageContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+          }
+        }
+      }, 100);
+    }
+  }, [searchResults]);
+
+  const nextSearchResult = useCallback(() => {
+    if (searchResults.length === 0) return;
+    const nextIndex = (currentSearchIndex + 1) % searchResults.length;
+    goToSearchResult(nextIndex);
+  }, [currentSearchIndex, searchResults.length, goToSearchResult]);
+
+  const prevSearchResult = useCallback(() => {
+    if (searchResults.length === 0) return;
+    const prevIndex = (currentSearchIndex - 1 + searchResults.length) % searchResults.length;
+    goToSearchResult(prevIndex);
+  }, [currentSearchIndex, searchResults.length, goToSearchResult]);
+
+  const closeSearch = useCallback(() => {
+    setShowSearchPanel(false);
+    setSearchQuery('');
+    setSearchResults([]);
+    setCurrentSearchIndex(0);
+  }, []);
+
+  console.log('App: RENDER (Verified)', { translateOpen: translateView?.isOpen });
+
+  const implementedLandingTools = ['mergePdf', 'splitPdf', 'removePages', 'extractPages', 'organizePdf', 'scanToPdf', 'compressPdf', 'repairPdf', 'ocrPdf', 'jpgToPdf', 'wordToPdf', 'powerpointToPdf', 'excelToPdf', 'htmlToPdf', 'pdfToJpg', 'pdfToWord', 'pdfToPowerpoint', 'pdfToExcel', 'pdfToPdfA', 'rotatePdf', 'addPageNumbers', 'addWatermark', 'cropPdf', 'editPdf', 'unlockPdf', 'protectPdf', 'signPdf', 'redactPdf', 'comparePdf'];
+
+  const openTool = (toolKey, { initialFiles = null } = {}) => {
+    setToolRunner({ isOpen: true, toolKey, initialFiles });
+  };
+
+  const closeTool = () => {
+    setToolRunner({ isOpen: false, toolKey: null, initialFiles: null });
+  };
+
+  const handleOpenTranslateView = ({ pdfBuffer, fileName, targetLang }) => {
+    console.log('App: 1. Opening translate view', { fileName });
+    try {
+      closeTool(); // Close the modal
+      console.log('App: 2. Modal closed');
+    } catch (e) {
+      console.error('App: Error closing modal', e);
+    }
+
+    setTranslateView(prev => {
+      console.log('App: 3. Setting translateView state', { prev });
+      return { isOpen: true, pdfBuffer, fileName, targetLang };
+    });
+    console.log('App: 4. State update requested');
+  };
+
+  useEffect(() => {
+    // Escape hatch for prop drilling issues
+    window.__handleStartTranslation = handleOpenTranslateView;
+    console.log('App: Registered global translation handler');
+  }, []);
+
+  const closeTranslateView = () => {
+    setTranslateView({ isOpen: false, pdfBuffer: null, fileName: '', targetLang: 'sv' });
+  };
+
+  const openToolWithCurrentPdf = (toolKey) => {
+    if (!pdfData) {
+      openTool(toolKey);
+      return;
+    }
+    const buf = new Uint8Array(pdfData).slice().buffer;
+    openTool(toolKey, { initialFiles: [{ name: 'current.pdf', buffer: buf, size: buf.byteLength }] });
+  };
+
   // Form-inställningar
   const [shapeSettings, setShapeSettings] = useState({
     type: 'rectangle', // rectangle, circle, line, arrow, highlight
@@ -138,15 +448,68 @@ export default function App() {
     fillColor: 'transparent',
     strokeWidth: 2
   });
-  
+
   // Memoized callback för sidebar width-ändringar
   const handleSidebarWidthChange = useCallback((newWidth) => {
     setSidebarWidth(newWidth);
   }, []);
 
+  const getTextServerUrl = useCallback(() => {
+    return import.meta.env.VITE_TEXT_SERVER_URL || 'http://localhost:8082/replace-text';
+  }, []);
+
+  // PDF.js viewport.scale handles conversion. Coordinates stored in textBoxes are already in PDF points
+  // (derived from viewport scale=1). Do not scale them down again.
+  const PDFJS_CSS_UNITS = 1; // Was 96/72, but input is already points.
+  const toPdfPoints = useCallback((v) => (typeof v === 'number' ? v / PDFJS_CSS_UNITS : 0), []);
+  const rectToPdfPoints = useCallback((r) => {
+    if (!r) return { x: 0, y: 0, width: 0, height: 0 };
+    return {
+      x: toPdfPoints(r.x ?? 0),
+      y: toPdfPoints(r.y ?? 0),
+      width: toPdfPoints(r.width ?? 0),
+      height: toPdfPoints(r.height ?? 0),
+    };
+  }, [toPdfPoints]);
+
+  // Bookmarks Management
+  const addBookmark = useCallback((customTitle) => {
+    if (!pdfDoc) return;
+
+    // Check if page is already bookmarked
+    const existing = bookmarks.find(b => b.pageIndex === currentPage - 1);
+    if (existing) {
+      info(t('bookmarks.alreadyExists', 'Denna sida är redan bokmärkt'));
+      return;
+    }
+
+    const title = (typeof customTitle === 'string' && customTitle)
+      ? customTitle
+      : `${t('common.page', 'Sida')} ${currentPage}`;
+
+    const newBookmark = {
+      id: Date.now().toString(),
+      pageIndex: currentPage - 1,
+      title: title,
+      timestamp: new Date().toISOString()
+    };
+
+    setBookmarks(prev => [...prev, newBookmark].sort((a, b) => a.pageIndex - b.pageIndex));
+    success(t('bookmarks.added', 'Bokmärke tillagt'));
+  }, [pdfDoc, currentPage, bookmarks, t, success, info]);
+
+  const removeBookmark = useCallback((id) => {
+    setBookmarks(prev => prev.filter(b => b.id !== id));
+  }, []);
+
+  const updateBookmark = useCallback((id, newTitle) => {
+    setBookmarks(prev => prev.map(b => b.id === id ? { ...b, title: newTitle } : b));
+  }, []);
+
   // History för undo/redo (måste vara före saveToHistory)
   const [history, setHistory] = useState([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
+  const historyIndexRef = useRef(-1); // Ref för att undvika stale closure i saveToHistory
   const maxHistorySize = 50;
 
   // Refs för att spåra synkronisering och förhindra oändliga loops
@@ -158,24 +521,36 @@ export default function App() {
   const pendingViewerScrollRestoreRef = useRef(null); // { pageNum, offsetInPage, align?: 'keep'|'center' }
   const suppressPageFromScrollRef = useRef(false);
 
+  // Live-apply importerad text via text-servern (för att slippa mask/grå rutor i preview)
+  const textServerApplyTimerRef = useRef(null);
+  const textServerApplyInFlightRef = useRef(false);
+  const textServerApplyQueuedRef = useRef(false);
+  const textServerApplyNonceRef = useRef(0);
+  const textServerLastWarnAtRef = useRef(0);
+
   // Dropdown state (top toolbar)
   const [showPageLayoutMenu, setShowPageLayoutMenu] = useState(false);
   const pageLayoutMenuRef = useRef(null);
 
   // Spara tillstånd till history (måste vara före useEffect som använder den)
-  const saveToHistory = useCallback((newTextBoxes = null, newWhiteoutBoxes = null, newPatchBoxes = null, newShapeBoxes = null, newCommentBoxes = null, newHighlightStrokes = null) => {
+  const saveToHistory = useCallback((newTextBoxes = null, newWhiteoutBoxes = null, newPatchBoxes = null, newShapeBoxes = null, newCommentBoxes = null, newHighlightStrokes = null, newPenStrokes = null, newLinkBoxes = null) => {
     const state = {
       textBoxes: JSON.parse(JSON.stringify(newTextBoxes !== null ? newTextBoxes : textBoxes)),
       whiteoutBoxes: JSON.parse(JSON.stringify(newWhiteoutBoxes !== null ? newWhiteoutBoxes : whiteoutBoxes)),
       patchBoxes: JSON.parse(JSON.stringify(newPatchBoxes !== null ? newPatchBoxes : patchBoxes)),
       shapeBoxes: JSON.parse(JSON.stringify(newShapeBoxes !== null ? newShapeBoxes : shapeBoxes)),
       highlightStrokes: JSON.parse(JSON.stringify(newHighlightStrokes !== null ? newHighlightStrokes : highlightStrokes)),
-      commentBoxes: JSON.parse(JSON.stringify(newCommentBoxes !== null ? newCommentBoxes : commentBoxes))
+      commentBoxes: JSON.parse(JSON.stringify(newCommentBoxes !== null ? newCommentBoxes : commentBoxes)),
+      penStrokes: JSON.parse(JSON.stringify(newPenStrokes !== null ? newPenStrokes : penStrokes)),
+      linkBoxes: JSON.parse(JSON.stringify(newLinkBoxes !== null ? newLinkBoxes : linkBoxes))
     };
-    
+
+    // Använd ref för att undvika stale closure
+    const currentIndex = historyIndexRef.current;
+
     setHistory(prev => {
       // Ta bort alla framtida states om vi är mitt i history
-      const newHistory = prev.slice(0, historyIndex + 1);
+      const newHistory = prev.slice(0, currentIndex + 1);
       // Lägg till ny state
       newHistory.push(state);
       // Begränsa storleken
@@ -185,23 +560,27 @@ export default function App() {
       }
       return newHistory;
     });
+
+    // Uppdatera både state och ref
     setHistoryIndex(prev => {
       const newIndex = prev + 1;
-      return newIndex >= maxHistorySize ? maxHistorySize - 1 : newIndex;
+      const finalIndex = newIndex >= maxHistorySize ? maxHistorySize - 1 : newIndex;
+      historyIndexRef.current = finalIndex; // Synka ref
+      return finalIndex;
     });
-  }, [textBoxes, whiteoutBoxes, patchBoxes, shapeBoxes, highlightStrokes, commentBoxes, historyIndex]);
+  }, [textBoxes, whiteoutBoxes, patchBoxes, shapeBoxes, highlightStrokes, commentBoxes, penStrokes, linkBoxes]);
 
   // Uppdatera textSettings när en textbox är vald (endast när selection eller textBox ändras)
   useEffect(() => {
     // Hoppa över om vi är mitt i en resize-operation eller om vi redan synkar
     if (isResizingRef.current || isSyncingFromSelectionRef.current) return;
-    
+
     if (selectedType === 'text' && selectedElement !== null) {
       const selectedTextBox = textBoxes[selectedElement];
       if (selectedTextBox) {
         // Kontrollera om textSettings faktiskt behöver uppdateras
         // Jämför med nuvarande textSettings för att undvika onödiga updates
-        const needsUpdate = 
+        const needsUpdate =
           Math.round(selectedTextBox.fontSizePt || 12) !== Math.round(textSettings.fontSizePt) ||
           selectedTextBox.fontFamily !== textSettings.fontFamily ||
           selectedTextBox.color !== textSettings.color ||
@@ -232,13 +611,13 @@ export default function App() {
   useEffect(() => {
     // Hoppa över om vi är mitt i en resize-operation eller om vi synkar från selection
     if (isResizingRef.current || isSyncingFromSelectionRef.current) return;
-    
+
     if (selectedType === 'text' && selectedElement !== null && textBoxes[selectedElement]) {
       const newBoxes = [...textBoxes];
       const selectedTextBox = newBoxes[selectedElement];
       if (selectedTextBox) {
         // Kontrollera om något faktiskt har ändrats för att undvika oändlig loop
-        const hasChanged = 
+        const hasChanged =
           Math.round(selectedTextBox.fontSizePt || 12) !== Math.round(textSettings.fontSizePt) ||
           selectedTextBox.fontFamily !== textSettings.fontFamily ||
           selectedTextBox.color !== textSettings.color ||
@@ -274,7 +653,7 @@ export default function App() {
   // Synkning för whiteout-färg - uppdatera whiteoutColor när en whiteout box väljs
   useEffect(() => {
     if (isResizingRef.current) return;
-    
+
     if (selectedType === 'whiteout' && selectedElement !== null) {
       const selectedWhiteoutBox = whiteoutBoxes[selectedElement];
       if (selectedWhiteoutBox) {
@@ -289,7 +668,7 @@ export default function App() {
   // Uppdatera vald whiteout box när whiteoutColor ändras
   useEffect(() => {
     if (isResizingRef.current) return;
-    
+
     if (selectedType === 'whiteout' && selectedElement !== null && whiteoutBoxes[selectedElement]) {
       const newBoxes = [...whiteoutBoxes];
       const selectedWhiteoutBox = newBoxes[selectedElement];
@@ -311,11 +690,11 @@ export default function App() {
   // Synkning för shape-inställningar - uppdatera shapeSettings när en shape väljs
   useEffect(() => {
     if (isResizingRef.current || isSyncingFromSelectionRef.current) return;
-    
+
     if (selectedType === 'shape' && selectedElement !== null) {
       const selectedShapeBox = shapeBoxes[selectedElement];
       if (selectedShapeBox) {
-        const needsUpdate = 
+        const needsUpdate =
           selectedShapeBox.type !== shapeSettings.type ||
           (selectedShapeBox.strokeColor || '#000000') !== shapeSettings.strokeColor ||
           (selectedShapeBox.fillColor || 'transparent') !== shapeSettings.fillColor ||
@@ -340,12 +719,12 @@ export default function App() {
   // Uppdatera vald shape när shapeSettings ändras
   useEffect(() => {
     if (isResizingRef.current || isSyncingFromSelectionRef.current) return;
-    
+
     if (selectedType === 'shape' && selectedElement !== null && shapeBoxes[selectedElement]) {
       const newBoxes = [...shapeBoxes];
       const selectedShapeBox = newBoxes[selectedElement];
       if (selectedShapeBox) {
-        const hasChanged = 
+        const hasChanged =
           selectedShapeBox.strokeColor !== shapeSettings.strokeColor ||
           selectedShapeBox.fillColor !== shapeSettings.fillColor ||
           selectedShapeBox.strokeWidth !== shapeSettings.strokeWidth;
@@ -385,26 +764,291 @@ export default function App() {
     const y = Math.max(0, Math.floor(rectPx.y));
     const w = Math.max(1, Math.floor(rectPx.width));
     const h = Math.max(1, Math.floor(rectPx.height));
-    const img = ctx.getImageData(x, y, Math.min(w, canvas.width - x), Math.min(h, canvas.height - y));
-    const data = img.data;
-    let r = 0, g = 0, b = 0, c = 0;
-    for (let i = 0; i < data.length; i += 4) {
-      r += data[i]; g += data[i + 1]; b += data[i + 2]; c++;
+    const rw = Math.min(w, canvas.width - x);
+    const rh = Math.min(h, canvas.height - y);
+
+    // NOTE: This is used to pick a "background" mask color for edited imported text.
+    // A naïve average includes dark glyph pixels -> gray boxes when deleting text.
+    // To approximate background, we bias toward the brightest pixels in the sampled area.
+    try {
+      const img = ctx.getImageData(x, y, rw, rh);
+      const data = img.data;
+      const totalPixels = Math.floor(data.length / 4);
+      if (!totalPixels) return null;
+
+      // Limit work: sample at most ~1200 pixels (stride over the buffer).
+      const stridePx = Math.max(1, Math.floor(Math.sqrt(totalPixels / 1200)));
+      const stride = stridePx * 4;
+
+      const hist = new Array(256).fill(0);
+      let samples = 0;
+
+      for (let i = 0; i < data.length; i += stride) {
+        const rr = data[i];
+        const gg = data[i + 1];
+        const bb = data[i + 2];
+        // perceived-ish brightness, cheap and good enough here
+        const lum = Math.max(0, Math.min(255, Math.round((rr + gg + bb) / 3)));
+        hist[lum]++;
+        samples++;
+      }
+
+      if (!samples) return null;
+
+      // Pick a cutoff so we keep roughly the brightest 20% of sampled pixels.
+      const keep = Math.max(1, Math.floor(samples * 0.2));
+      let cum = 0;
+      let cutoff = 255;
+      for (let v = 255; v >= 0; v--) {
+        cum += hist[v];
+        if (cum >= keep) {
+          cutoff = v;
+          break;
+        }
+      }
+
+      let r = 0, g = 0, b = 0, c = 0;
+      for (let i = 0; i < data.length; i += stride) {
+        const rr = data[i];
+        const gg = data[i + 1];
+        const bb = data[i + 2];
+        const lum = Math.round((rr + gg + bb) / 3);
+        if (lum >= cutoff) {
+          r += rr;
+          g += gg;
+          b += bb;
+          c++;
+        }
+      }
+
+      // Fallback: if something weird happens (e.g. solid dark area), use overall average.
+      if (!c) {
+        let rr = 0, gg = 0, bb = 0, cc = 0;
+        for (let i = 0; i < data.length; i += stride) {
+          rr += data[i];
+          gg += data[i + 1];
+          bb += data[i + 2];
+          cc++;
+        }
+        if (!cc) return null;
+        return `rgba(${Math.round(rr / cc)}, ${Math.round(gg / cc)}, ${Math.round(bb / cc)}, 1)`;
+      }
+
+      return `rgba(${Math.round(r / c)}, ${Math.round(g / c)}, ${Math.round(b / c)}, 1)`;
+    } catch (e) {
+      // getImageData can throw if canvas is tainted or out-of-bounds in some browsers.
+      return null;
     }
-    if (!c) return null;
-    return `rgba(${Math.round(r / c)}, ${Math.round(g / c)}, ${Math.round(b / c)}, 1)`;
   }, []);
+
+  // Live-apply dirty importerad text till servern och ladda om PDF i preview.
+  // Detta gör att vi slipper mask-overlay (och därmed "grå ruta") när servern är igång.
+  const applyDirtyImportedTextViaServer = useCallback(async () => {
+    if (!pdfDoc || !pdfData) return;
+
+    if (textServerApplyInFlightRef.current) {
+      textServerApplyQueuedRef.current = true;
+      return;
+    }
+
+    const nonce = ++textServerApplyNonceRef.current;
+    textServerApplyInFlightRef.current = true;
+    textServerApplyQueuedRef.current = false;
+
+    try {
+      const dirty = (textBoxes || [])
+        .map((tb, idx) => ({ tb, idx }))
+        .filter(({ tb }) => tb?.isImported && tb?.isDirty);
+
+      if (dirty.length === 0) return;
+
+      // Snapshot: för att inte nolla nyare edits om användaren fortsätter skriva medan requesten är i flight.
+      const snapshotByIndex = new Map(
+        dirty.map(({ tb, idx }) => [
+          idx,
+          {
+            text: tb.text || '',
+            rect: tb.rect,
+            originalRect: tb.originalRect || tb.rect,
+            pageIndex: tb.pageIndex ?? 0,
+            fontFamily: tb.fontFamily || 'Helvetica',
+            fontSizePt: tb.fontSizePt || 12,
+            color: tb.color || '#000000',
+          },
+        ])
+      );
+
+      setIsLoading(true);
+      setLoadingMessage(t('loading.applyingTextEdits', 'Uppdaterar text...'));
+
+      // Kopiera PDF-data säkert (hantera detached ArrayBuffer)
+      let pdfDataCopy;
+      try {
+        const uint8Array = new Uint8Array(pdfData);
+        pdfDataCopy = uint8Array.slice().buffer;
+      } catch (error) {
+        console.warn('PDF data är detached, exporterar från pdfDoc...');
+        const exportedBytes = await exportPDFFromPdfDoc(pdfDoc);
+        pdfDataCopy = exportedBytes.buffer.slice(0);
+      }
+
+      const meta = {
+        replacements: dirty.map(({ idx }) => {
+          const s = snapshotByIndex.get(idx);
+          const bboxRect = rectToPdfPoints(s.originalRect || s.rect);
+          console.log('[DEBUG] Sending to server:', {
+            originalRect: s.originalRect,
+            rect: s.rect,
+            bboxRect,
+            pageIndex: s.pageIndex
+          });
+          return {
+            page: (s.pageIndex ?? 0) + 1,
+            bbox: bboxRect,
+            text: s.text || '',
+            font: s.fontFamily || 'Helvetica',
+            size: Math.max(1, toPdfPoints(s.fontSizePt || 12)),
+            color: s.color || '#000000',
+          };
+        }),
+      };
+
+      const formData = new FormData();
+      formData.append('file', new Blob([pdfDataCopy], { type: 'application/pdf' }), 'input.pdf');
+      formData.append('meta', JSON.stringify(meta));
+
+      const serverUrl = getTextServerUrl();
+      let resp;
+      try {
+        resp = await fetch(serverUrl, { method: 'POST', body: formData });
+      } catch (e) {
+        const now = Date.now();
+        if (now - (textServerLastWarnAtRef.current || 0) > 10000) {
+          textServerLastWarnAtRef.current = now;
+          warning(t('errors.textServerUnavailable', 'Textservern kör inte (port 8082). Preview använder mask tills servern är igång.'));
+        }
+        console.warn('Textservern kunde inte nås:', e);
+        return;
+      }
+
+      if (!resp.ok) {
+        const now = Date.now();
+        if (now - (textServerLastWarnAtRef.current || 0) > 10000) {
+          textServerLastWarnAtRef.current = now;
+          warning(t('errors.textServerUnavailable', 'Textservern kör inte (port 8082). Preview använder mask tills servern är igång.'));
+        }
+        console.warn(`Textservern svarade inte (${resp.status}).`);
+        return;
+      }
+
+      const outBuf = await resp.arrayBuffer();
+      console.log('[DEBUG] Server response size:', outBuf.byteLength, 'bytes');
+
+      // Ladda om med PDF.js (använd två kopior för att undvika detached ArrayBuffer)
+      const stateBytes = new Uint8Array(outBuf).slice();
+      const pdfJsBytes = new Uint8Array(outBuf).slice();
+      const loadingTask = pdfjsLib.getDocument({ data: pdfJsBytes });
+      const newDoc = await loadingTask.promise;
+      console.log('[DEBUG] Loaded new PDF doc with', newDoc.numPages, 'pages');
+
+      // Om en nyare apply startats, ignorera denna (best effort)
+      if (nonce !== textServerApplyNonceRef.current) return;
+
+      // Save scroll position before reloading PDF
+      const container = containerRef.current;
+      const savedScrollTop = container?.scrollTop || 0;
+      const savedScrollLeft = container?.scrollLeft || 0;
+      const keepPage = currentPageRef.current || currentPage;
+
+      console.log('[DEBUG] Setting new pdfData and pdfDoc, saved scroll:', savedScrollTop);
+      setPdfData(stateBytes.buffer.slice(0));
+      setPdfDoc(newDoc);
+      setPdfPages([]);
+      setPageViewports([]);
+      canvasRefs.current = {};
+      pageContainerRefs.current = {};
+
+      // Schedule scroll restoration after next render
+      pendingViewerScrollRestoreRef.current = {
+        pageNum: Math.min(Math.max(1, keepPage), newDoc.numPages),
+        offsetInPage: 0,
+        scrollTop: savedScrollTop,
+        scrollLeft: savedScrollLeft,
+        align: 'exact'
+      };
+
+      // Behåll sida om möjligt (using keepPage from above)
+      const nextPage = Math.min(Math.max(1, keepPage), newDoc.numPages);
+      currentPageRef.current = nextPage;
+      setCurrentPage(nextPage);
+
+      // IMPORTANT: For OCR PDFs, don't clear isDirty/maskColor!
+      // OCR PDFs have a scanned IMAGE underneath the invisible text layer.
+      // We can remove the text layer, but the image persists. The mask
+      // must remain visible to cover the original text in the image.
+      // So we only update originalRect but keep isDirty=true and maskColor.
+      setTextBoxes((prev) => {
+        return (prev || []).map((tb, idx) => {
+          const snap = snapshotByIndex.get(idx);
+          if (!snap) return tb;
+
+          // Rör inte om användaren redan ändrat vidare sedan snapshot
+          const sameText = (tb?.text || '') === (snap.text || '');
+          const sameRect = tb?.rect && snap.rect
+            ? tb.rect.x === snap.rect.x &&
+            tb.rect.y === snap.rect.y &&
+            tb.rect.width === snap.rect.width &&
+            tb.rect.height === snap.rect.height
+            : false;
+
+          if (!tb?.isImported || !tb?.isDirty || !sameText || !sameRect) return tb;
+
+          // Keep isDirty and maskColor to maintain the mask over scanned image background
+          return {
+            ...tb,
+            // Keep isDirty: true and maskColor so mask stays visible
+            originalRect: tb.rect,
+          };
+        });
+      });
+    } catch (err) {
+      console.warn('Live text-apply misslyckades:', err);
+    } finally {
+      textServerApplyInFlightRef.current = false;
+      setIsLoading(false);
+      setLoadingMessage('');
+
+      // Om fler ändringar kom in under flight, kör igen.
+      if (textServerApplyQueuedRef.current) {
+        textServerApplyQueuedRef.current = false;
+        setTimeout(() => {
+          applyDirtyImportedTextViaServer();
+        }, 250);
+      }
+    }
+  }, [pdfDoc, pdfData, textBoxes, currentPage, t, getTextServerUrl]);
+
+  const scheduleApplyDirtyImportedTextViaServer = useCallback(() => {
+    if (textServerApplyTimerRef.current) {
+      clearTimeout(textServerApplyTimerRef.current);
+    }
+    // Debounce för att kunna batcha flera blur events snabbt
+    textServerApplyTimerRef.current = setTimeout(() => {
+      textServerApplyTimerRef.current = null;
+      applyDirtyImportedTextViaServer();
+    }, 350);
+  }, [applyDirtyImportedTextViaServer]);
 
   // Hjälpare: markera textruta som "dirty" om något har ändrats (text/stil/rect/rotation)
   const markTextBoxDirty = useCallback((prev = {}, updated = {}) => {
     const rectChanged = prev.rect && updated.rect
       ? prev.rect.x !== updated.rect.x ||
-        prev.rect.y !== updated.rect.y ||
-        prev.rect.width !== updated.rect.width ||
-        prev.rect.height !== updated.rect.height
+      prev.rect.y !== updated.rect.y ||
+      prev.rect.width !== updated.rect.width ||
+      prev.rect.height !== updated.rect.height
       : false;
 
-    const changed = 
+    const changed =
       (prev.text || '') !== (updated.text || '') ||
       (prev.fontSizePt || 0) !== (updated.fontSizePt || 0) ||
       (prev.fontFamily || '') !== (updated.fontFamily || '') ||
@@ -482,7 +1126,7 @@ export default function App() {
 
     return imported;
   }, []);
-  
+
   const canvasRefs = useRef({}); // Objekt med pageNum som nyckel och canvas-ref som värde
   const containerRef = useRef(null);
   const pageContainerRefs = useRef({}); // Refs för page containers för scroll-tracking
@@ -491,7 +1135,7 @@ export default function App() {
   const [drawStart, setDrawStart] = useState(null);
   const [currentRect, setCurrentRect] = useState(null);
   const [drawingPage, setDrawingPage] = useState(null); // Vilken sida som ritas på
-  
+
   // State för drag och resize
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
@@ -503,13 +1147,13 @@ export default function App() {
   const [initialRotation, setInitialRotation] = useState(0); // Initial rotation-vinkel
   const [originalRect, setOriginalRect] = useState(null);
   const [originalFontSize, setOriginalFontSize] = useState(null); // Spara original fontstorlek vid resize
-  
+
   // State för endpoint-dragning (linjer/pilar)
   const [isDraggingEndpoint, setIsDraggingEndpoint] = useState(false);
   const [draggingEndpointType, setDraggingEndpointType] = useState(null); // 'start' eller 'end'
   const [originalStartPoint, setOriginalStartPoint] = useState(null);
   const [originalEndPoint, setOriginalEndPoint] = useState(null);
-  
+
   // State för punkt-till-punkt ritning (linjer/pilar)
   const [lineStartPoint, setLineStartPoint] = useState(null); // {x, y} i px
   const [lineEndPoint, setLineEndPoint] = useState(null); // {x, y} i px
@@ -525,7 +1169,11 @@ export default function App() {
       setShapeBoxes(JSON.parse(JSON.stringify(state.shapeBoxes || [])));
       setHighlightStrokes(JSON.parse(JSON.stringify(state.highlightStrokes || [])));
       setCommentBoxes(JSON.parse(JSON.stringify(state.commentBoxes || [])));
+      setCommentBoxes(JSON.parse(JSON.stringify(state.commentBoxes || [])));
+      setPenStrokes(JSON.parse(JSON.stringify(state.penStrokes || [])));
+      setLinkBoxes(JSON.parse(JSON.stringify(state.linkBoxes || [])));
       setHistoryIndex(newIndex);
+      historyIndexRef.current = newIndex; // Synka ref
       setSelectedElement(null);
       setSelectedType(null);
     }
@@ -542,7 +1190,9 @@ export default function App() {
       setShapeBoxes(JSON.parse(JSON.stringify(state.shapeBoxes || [])));
       setHighlightStrokes(JSON.parse(JSON.stringify(state.highlightStrokes || [])));
       setCommentBoxes(JSON.parse(JSON.stringify(state.commentBoxes || [])));
+      setPenStrokes(JSON.parse(JSON.stringify(state.penStrokes || [])));
       setHistoryIndex(newIndex);
+      historyIndexRef.current = newIndex; // Synka ref
       setSelectedElement(null);
       setSelectedType(null);
     }
@@ -567,6 +1217,7 @@ export default function App() {
       };
       setHistory([initialState]);
       setHistoryIndex(0);
+      historyIndexRef.current = 0; // Synka ref
     }
   }, [pdfDoc]);
 
@@ -594,6 +1245,10 @@ export default function App() {
       const newBoxes = commentBoxes.filter((_, i) => i !== selectedElement);
       setCommentBoxes(newBoxes);
       saveToHistory(null, null, null, null, newBoxes);
+    } else if (selectedType === 'link') {
+      const newBoxes = linkBoxes.filter((_, i) => i !== selectedElement);
+      setLinkBoxes(newBoxes);
+      saveToHistory(null, null, null, null, null, null, null, newBoxes);
     }
 
     setSelectedElement(null);
@@ -968,25 +1623,27 @@ export default function App() {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) {
           return; // Låt input-fält hantera backspace/delete själva
         }
-        
+
         if (selectedElement !== null && selectedType) {
           e.preventDefault();
           // Visa bekräftelsedialog
-          const confirmMessage = selectedType === 'text' 
+          const confirmMessage = selectedType === 'text'
             ? 'Vill du ta bort denna textruta?'
             : selectedType === 'whiteout'
-            ? 'Vill du ta bort denna whiteout-ruta?'
-            : selectedType === 'shape'
-            ? 'Vill du ta bort denna form?'
-            : 'Vill du ta bort detta kopierade område?';
-          
+              ? 'Vill du ta bort denna whiteout-ruta?'
+              : selectedType === 'shape'
+                ? 'Vill du ta bort denna form?'
+                : selectedType === 'link'
+                  ? 'Vill du ta bort denna länk?'
+                  : 'Vill du ta bort detta kopierade område?';
+
           if (window.confirm(confirmMessage)) {
             handleDelete();
           }
           return;
         }
       }
-      
+
       // Copy shortcut (Ctrl+C / Cmd+C)
       if ((e.ctrlKey || e.metaKey) && e.key === 'c' && !e.shiftKey) {
         // Kontrollera att vi inte är i ett input-fält
@@ -997,7 +1654,7 @@ export default function App() {
         handleCopy();
         return;
       }
-      
+
       // Paste shortcut (Ctrl+V / Cmd+V)
       if ((e.ctrlKey || e.metaKey) && e.key === 'v' && !e.shiftKey) {
         // Kontrollera att vi inte är i ett input-fält
@@ -1008,7 +1665,7 @@ export default function App() {
         handlePaste();
         return;
       }
-      
+
       // Duplicate shortcut (Ctrl+D / Cmd+D)
       if ((e.ctrlKey || e.metaKey) && e.key === 'd' && !e.shiftKey) {
         // Kontrollera att vi inte är i ett input-fält
@@ -1019,7 +1676,7 @@ export default function App() {
         handleDuplicate();
         return;
       }
-      
+
       // Undo/Redo shortcuts
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
         e.preventDefault();
@@ -1031,6 +1688,7 @@ export default function App() {
           setPatchBoxes(JSON.parse(JSON.stringify(state.patchBoxes)));
           setShapeBoxes(JSON.parse(JSON.stringify(state.shapeBoxes || [])));
           setHistoryIndex(newIndex);
+          historyIndexRef.current = newIndex; // Synka ref
           setSelectedElement(null);
           setSelectedType(null);
         }
@@ -1044,6 +1702,7 @@ export default function App() {
           setPatchBoxes(JSON.parse(JSON.stringify(state.patchBoxes)));
           setShapeBoxes(JSON.parse(JSON.stringify(state.shapeBoxes || [])));
           setHistoryIndex(newIndex);
+          historyIndexRef.current = newIndex; // Synka ref
           setSelectedElement(null);
           setSelectedType(null);
         }
@@ -1059,7 +1718,7 @@ export default function App() {
     // Spara nuvarande scroll-position innan tool ändras
     const currentScrollTop = containerRef.current?.scrollTop || 0;
     scrollPositionRef.current = currentScrollTop;
-    
+
     // Återställ scroll-position efter att tool har ändrats och DOM har uppdaterats
     // Använd requestAnimationFrame för att säkerställa att DOM är uppdaterad
     requestAnimationFrame(() => {
@@ -1107,40 +1766,40 @@ export default function App() {
           const page = await pdfDoc.getPage(pageNum);
           const layoutViewport = page.getViewport({ scale: zoom }); // används för mått/scroll
           const renderViewport = page.getViewport({ scale: zoom * dpr }); // används för skarp canvas
-          
+
           pages.push(page);
           viewports.push(layoutViewport);
-          
+
           // Rendera sidan när canvas är redo
           setTimeout(() => {
             if (isCancelled) return; // Hoppa över om komponenten är unmountad eller cleanup har körts
-            
+
             const canvas = canvasRefs.current[pageNum];
             if (canvas) {
               // Avbryt tidigare render-task för denna sida om den finns
               if (renderTasksRef.current[pageNum] && renderTasksRef.current[pageNum].cancel) {
                 renderTasksRef.current[pageNum].cancel();
               }
-              
+
               const context = canvas.getContext('2d');
               canvas.height = renderViewport.height;
               canvas.width = renderViewport.width;
               canvas.style.height = `${layoutViewport.height}px`;
               canvas.style.width = `${layoutViewport.width}px`;
-              
+
               context.clearRect(0, 0, canvas.width, canvas.height);
-              
+
               // Starta ny render-operation och spara task
               const renderTask = page.render({
                 canvasContext: context,
                 viewport: renderViewport
               });
-              
+
               renderTasksRef.current[pageNum] = renderTask;
-              
+
               renderTask.promise.then(() => {
                 if (!isCancelled) {
-                  console.log(`Page ${pageNum} rendered`);
+                  // console.log(`Page ${pageNum} rendered`);
                 }
                 // Ta bort task från ref när den är klar
                 if (renderTasksRef.current[pageNum] === renderTask) {
@@ -1172,7 +1831,7 @@ export default function App() {
     };
 
     renderAllPages();
-    
+
     // Cleanup: avbryt alla render-tasks när komponenten unmountas eller dependencies ändras
     return () => {
       isCancelled = true; // Sätt flaggan när komponenten unmountas
@@ -1286,6 +1945,22 @@ export default function App() {
       if (!pending) return;
 
       const container = containerRef.current;
+
+      // For 'exact' alignment (text deletion), restore immediately when container is available
+      if (pending.align === 'exact' && container) {
+        suppressPageFromScrollRef.current = true;
+        container.scrollTo({
+          top: Math.max(0, pending.scrollTop || 0),
+          left: pending.scrollLeft || 0,
+          behavior: 'auto'
+        });
+        pendingViewerScrollRestoreRef.current = null;
+        requestAnimationFrame(() => {
+          suppressPageFromScrollRef.current = false;
+        });
+        return;
+      }
+
       const pageEl = pageContainerRefs.current?.[pending.pageNum];
       const canvasEl = canvasRefs.current?.[pending.pageNum];
       const canvasStyleH = canvasEl?.style?.height ? parseFloat(canvasEl.style.height) : NaN;
@@ -1295,11 +1970,16 @@ export default function App() {
         suppressPageFromScrollRef.current = true;
         const align = pending.align || 'keep';
         let targetTop = pageEl.offsetTop + (pending.offsetInPage || 0);
+        let targetLeft = 0;
         if (align === 'center') {
           const containerRect = container.getBoundingClientRect();
           targetTop = pageEl.offsetTop - containerRect.height / 2 + pageEl.offsetHeight / 2;
+        } else if (align === 'exact') {
+          // Exact scroll position restore (for text deletion operations)
+          targetTop = pending.scrollTop || 0;
+          targetLeft = pending.scrollLeft || 0;
         }
-        container.scrollTo({ top: Math.max(0, targetTop), behavior: 'auto' });
+        container.scrollTo({ top: Math.max(0, targetTop), left: targetLeft, behavior: 'auto' });
         // Ensure currentPage matches the restored page
         if (currentPageRef.current !== pending.pageNum) {
           currentPageRef.current = pending.pageNum;
@@ -1401,7 +2081,20 @@ export default function App() {
   useEffect(() => {
     if (!showPageLayoutMenu) return;
     const onMouseDown = (e) => {
+      // Don't close if clicking the toggle button itself (it handles the toggle)
+      const isToggle = e.target.closest('[data-page-layout-toggle]');
+      console.log('App.jsx onMouseDown', {
+        target: e.target,
+        isToggle,
+        menuRef: pageLayoutMenuRef.current,
+        contains: pageLayoutMenuRef.current?.contains(e.target)
+      });
+
+      if (isToggle) {
+        return;
+      }
       if (pageLayoutMenuRef.current && !pageLayoutMenuRef.current.contains(e.target)) {
+        console.log('Closing page layout menu from outside click');
         setShowPageLayoutMenu(false);
       }
     };
@@ -1423,18 +2116,43 @@ export default function App() {
     }
 
     setIsLoading(true);
-    setLoadingMessage(t('loading.loadingPdf', 'Laddar PDF...'));
-    
+    setUploadProgress(0);
+    // Extract filename without extension
+    const nameWithoutExt = file.name.replace(/\.pdf$/i, '');
+    setPdfFileName(nameWithoutExt || 'Untitled');
+    setLoadingMessage(t('upload.uploading', 'Your file is uploading'));
+
+    // Start smooth progress animation (0 to 100 over 3 seconds)
+    const duration = 3000;
+    const startTime = Date.now();
+    const progressInterval = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(100, (elapsed / duration) * 100);
+      setUploadProgress(progress);
+      if (progress >= 100) {
+        clearInterval(progressInterval);
+      }
+    }, 50);
+
     try {
+      // Load PDF in background while animation runs
       const data = await loadPDF(file);
+
       // Viktigt: PDF.js kan "detacha" ArrayBuffer när den skickas till worker.
       // Därför: spara en kopia i state, och ge PDF.js en ANNAN kopia.
       const stateBytes = new Uint8Array(data).slice();
       const pdfJsBytes = new Uint8Array(data).slice();
       setPdfData(stateBytes.buffer.slice(0)); // Spara kopia av original PDF data
-      setLoadingMessage(t('loading.parsingPdf', 'Analyserar PDF...'));
+
+      setLoadingMessage(t('upload.uploading', 'Your file is uploading'));
       const loadingTask = pdfjsLib.getDocument({ data: pdfJsBytes });
       const doc = await loadingTask.promise;
+
+      // Load Outline
+      doc.getOutline().then(outline => {
+        setPdfOutline(outline || []);
+      }).catch(err => console.log('Outline fetch error', err));
+
       const importedTextBoxes = await importExistingPdfText(doc);
       setPdfDoc(doc);
       setCurrentPage(1);
@@ -1447,14 +2165,30 @@ export default function App() {
       setPatchBoxes([]);
       setShapeBoxes([]);
       setCommentBoxes([]);
+
+      // Detect if PDF needs OCR (no text or incomplete text coverage)
+      // Show banner if: no text, OR average text per page is low (< 50 chars/page)
+      const totalChars = importedTextBoxes.reduce((sum, tb) => sum + (tb.text || '').trim().length, 0);
+      const avgCharsPerPage = doc.numPages > 0 ? totalChars / doc.numPages : 0;
+      const hasFullTextCoverage = avgCharsPerPage >= 50; // Threshold: at least 50 chars per page
+      setShowOcrBanner(!hasFullTextCoverage && doc.numPages > 0);
+
       // History initieras i useEffect när pdfDoc sätts
       success(t('success.pdfLoaded', 'PDF laddad framgångsrikt'));
+
+      // Wait for animation to complete (remaining time from 3 seconds)
+      const elapsed = Date.now() - startTime;
+      const remaining = Math.max(0, duration - elapsed);
+      await new Promise(resolve => setTimeout(resolve, remaining));
+      clearInterval(progressInterval);
     } catch (err) {
+      clearInterval(progressInterval);
       console.error('Fel vid laddning av PDF:', err);
       error(t('errors.loadFailed', 'Kunde inte ladda PDF-filen') + ': ' + err.message);
     } finally {
       setIsLoading(false);
       setLoadingMessage('');
+      setUploadProgress(0);
     }
   };
 
@@ -1482,6 +2216,9 @@ export default function App() {
       setLoadingMessage(t('loading.parsingPdf', 'Analyserar PDF...'));
       const loadingTask = pdfjsLib.getDocument({ data: pdfJsBytes });
       const newDoc = await loadingTask.promise;
+
+      // Load Outline (empty for new doc, but consistency)
+      setPdfOutline([]);
 
       setPdfDoc(newDoc);
       setCurrentPage(1);
@@ -1586,32 +2323,32 @@ export default function App() {
   // Hjälpfunktion för att hitta vilken sida som klickades på
   const findPageFromMousePosition = (e) => {
     if (!containerRef.current || pageContainerRefs.current.length === 0) return null;
-    
+
     const containerRect = containerRef.current.getBoundingClientRect();
     const scrollTop = containerRef.current.scrollTop;
     const mouseY = e.clientY - containerRect.top + scrollTop;
-    
+
     // Hitta vilken sida som är på denna Y-position
     for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
       const pageContainer = pageContainerRefs.current[pageNum];
       if (!pageContainer) continue;
-      
+
       const pageRect = pageContainer.getBoundingClientRect();
       const pageTop = pageContainer.offsetTop;
       const pageBottom = pageTop + pageRect.height;
-      
+
       if (mouseY >= pageTop && mouseY < pageBottom) {
         return { pageNum, pageContainer };
       }
     }
-    
+
     return null;
   };
 
   const handleMouseDown = (e) => {
     // Sätt isMouseDown till true för att spåra om musknappen är nedtryckt
     setIsMouseDown(true);
-    
+
     // Om pan-verktyget är aktivt, starta panning
     if (tool === 'pan' && containerRef.current) {
       e.preventDefault();
@@ -1636,16 +2373,16 @@ export default function App() {
       }
       return;
     }
-    
+
     const canvasRef = canvasRefs.current[clickedPage.pageNum];
 
     // Beräkna koordinater relativt till canvas för den klickade sidan
     const canvasRect = canvasRef.getBoundingClientRect();
-    
+
     // Koordinater relativt till canvas
     const x = e.clientX - canvasRect.left;
     const y = e.clientY - canvasRect.top;
-    
+
     // Uppdatera currentPage om vi klickade på en annan sida
     if (clickedPage.pageNum !== currentPage) {
       setCurrentPage(clickedPage.pageNum);
@@ -1667,6 +2404,22 @@ export default function App() {
       return;
     }
 
+    // Pen tool: starta frihand-ritning
+    if (tool === 'pen') {
+      setIsDrawing(true);
+      setDrawingPage(clickedPage.pageNum);
+      const startPoint = { x, y };
+      const stroke = {
+        pageIndex: clickedPage.pageNum - 1,
+        color: penSettings.color,
+        opacity: penSettings.opacity,
+        strokeWidth: penSettings.strokeWidth,
+        points: [startPoint]
+      };
+      setCurrentPenStroke(stroke);
+      return;
+    }
+
     // Eraser: starta radering (frihand)
     if (tool === 'eraser') {
       setIsErasing(true);
@@ -1680,8 +2433,9 @@ export default function App() {
     let clickedType = null;
 
     // Kontrollera textBoxes (endast för aktuell sida)
-    // När highlight-verktyget är aktivt ska text inte gå att välja/redigera.
-    const allowTextHitTest = tool === null || tool === 'text' || tool === 'edit-text';
+    // När add-text (tool === 'text') eller highlight-verktyget är aktivt ska befintlig text inte gå att välja.
+    // Endast edit-text verktyget eller ingen verktyg (selection mode) ska kunna välja befintlig text.
+    const allowTextHitTest = tool === null || tool === 'edit-text';
     if (allowTextHitTest) {
       const pageTextBoxes = textBoxes.filter(tb => tb.pageIndex === undefined || tb.pageIndex === currentPage - 1);
       for (let i = pageTextBoxes.length - 1; i >= 0; i--) {
@@ -1689,7 +2443,7 @@ export default function App() {
         const globalIndex = textBoxes.indexOf(tb);
         const tbRect = rectPtToPx(tb.rect, zoom);
         if (x >= tbRect.x && x <= tbRect.x + tbRect.width &&
-            y >= tbRect.y && y <= tbRect.y + tbRect.height) {
+          y >= tbRect.y && y <= tbRect.y + tbRect.height) {
           clickedElement = globalIndex;
           clickedType = 'text';
           break;
@@ -1709,7 +2463,7 @@ export default function App() {
           const globalIndex = whiteoutBoxes.indexOf(wb);
           const wbRect = rectPtToPx(wb.rect, zoom);
           if (x >= wbRect.x && x <= wbRect.x + wbRect.width &&
-              y >= wbRect.y && y <= wbRect.y + wbRect.height) {
+            y >= wbRect.y && y <= wbRect.y + wbRect.height) {
             clickedElement = globalIndex;
             clickedType = 'whiteout';
             break;
@@ -1729,7 +2483,7 @@ export default function App() {
           const globalIndex = patchBoxes.indexOf(pb);
           const pbRect = rectPtToPx(pb.targetRect, zoom);
           if (x >= pbRect.x && x <= pbRect.x + pbRect.width &&
-              y >= pbRect.y && y <= pbRect.y + pbRect.height) {
+            y >= pbRect.y && y <= pbRect.y + pbRect.height) {
             clickedElement = globalIndex;
             clickedType = 'patch';
             break;
@@ -1749,7 +2503,7 @@ export default function App() {
           const cbRect = rectPtToPx(cb.rect, zoom);
           // Markören är 24px stor, kontrollera om klick är inom markören
           if (x >= cbRect.x && x <= cbRect.x + cbRect.width &&
-              y >= cbRect.y && y <= cbRect.y + cbRect.height) {
+            y >= cbRect.y && y <= cbRect.y + cbRect.height) {
             clickedElement = globalIndex;
             clickedType = 'comment';
             break;
@@ -1769,7 +2523,7 @@ export default function App() {
           const globalIndex = shapeBoxes.indexOf(sb);
           const isLineOrArrow = (sb.type === 'line' || sb.type === 'arrow') && sb.startPoint && sb.endPoint;
           const isHighlightRect = sb.type === 'highlight';
-          
+
           let hit = false;
           if (isLineOrArrow) {
             // För linjer/pilar: kontrollera om klick är nära linjen (within 5px)
@@ -1786,7 +2540,7 @@ export default function App() {
             if (isHighlightRect) {
               // Highlight-ytor bör vara klickbara över hela ytan
               if (x >= sbRect.x && x <= sbRect.x + sbRect.width &&
-                  y >= sbRect.y && y <= sbRect.y + sbRect.height) {
+                y >= sbRect.y && y <= sbRect.y + sbRect.height) {
                 hit = true;
               }
             } else if (sb.type === 'circle') {
@@ -1800,10 +2554,26 @@ export default function App() {
               hit = isPointNearRectBorder(x, y, sbRect.x, sbRect.y, sbRect.width, sbRect.height, 5);
             }
           }
-          
+
           if (hit) {
             clickedElement = globalIndex;
             clickedType = 'shape';
+            break;
+          }
+        }
+      }
+    }
+    if (clickedElement === null) {
+      if ((tool === null)) {
+        const pageLinkBoxes = linkBoxes.filter(lb => lb.pageIndex === undefined || lb.pageIndex === currentPage - 1);
+        for (let i = pageLinkBoxes.length - 1; i >= 0; i--) {
+          const lb = pageLinkBoxes[i];
+          const globalIndex = linkBoxes.indexOf(lb);
+          const lbRect = rectPtToPx(lb.rect, zoom);
+          if (x >= lbRect.x && x <= lbRect.x + lbRect.width &&
+            y >= lbRect.y && y <= lbRect.y + lbRect.height) {
+            clickedElement = globalIndex;
+            clickedType = 'link';
             break;
           }
         }
@@ -1823,7 +2593,7 @@ export default function App() {
           setTool('text');
         }
       }
-      
+
       // Om whiteout är vald, aktivera whiteout-verktyget om tool === null
       let whiteoutToolJustActivated = false;
       if (clickedType === 'whiteout') {
@@ -1836,7 +2606,7 @@ export default function App() {
           setTool('whiteout');
         }
       }
-      
+
       // Om patch är vald, aktivera patch-verktyget om tool === null
       let patchToolJustActivated = false;
       if (clickedType === 'patch') {
@@ -1849,7 +2619,7 @@ export default function App() {
           setTool('patch');
         }
       }
-      
+
       // Om shape är vald, aktivera motsvarande shape-verktyg så att sidebar visas
       let shapeToolJustActivated = false;
       if (clickedType === 'shape') {
@@ -1868,7 +2638,7 @@ export default function App() {
           setTool(`shape-${shapeType}`);
         }
       }
-      
+
       // Om comment är vald, aktivera comment-verktyget om tool === null eller om tool inte är 'comment'
       // Verktyget förblir aktivt när man klickar på befintliga kommentarer
       if (clickedType === 'comment' && tool !== 'comment') {
@@ -1878,23 +2648,23 @@ export default function App() {
         }
         setTool('comment');
       }
-      
+
       setSelectedElement(clickedElement);
       setSelectedType(clickedType);
-      
+
       // Om text är vald och inte i edit-läge, starta drag (men inte om det är en resize-handle)
       if (clickedType === 'text') {
         if (tool === 'edit-text') {
           setTextEditTrigger({ index: clickedElement, nonce: Date.now() });
         } else if (!e.target.dataset.resizeHandle && !e.target.closest('textarea')) {
-        const tb = textBoxes[clickedElement];
-        const tbRect = rectPtToPx(tb.rect, zoom);
-        setIsDragging(true);
-        setDragStart({ x, y, startX: tbRect.x, startY: tbRect.y });
-        setOriginalRect(tb.rect);
+          const tb = textBoxes[clickedElement];
+          const tbRect = rectPtToPx(tb.rect, zoom);
+          setIsDragging(true);
+          setDragStart({ x, y, startX: tbRect.x, startY: tbRect.y });
+          setOriginalRect(tb.rect);
         }
       }
-      
+
       // Om whiteout är vald, starta drag om whiteout-verktyget är aktivt ELLER om vi just aktiverade det
       // (men inte om det är en resize-handle)
       if (clickedType === 'whiteout' && (tool === 'whiteout' || whiteoutToolJustActivated) && !e.target.dataset.resizeHandle) {
@@ -1904,7 +2674,7 @@ export default function App() {
         setDragStart({ x, y, startX: wbRect.x, startY: wbRect.y });
         setOriginalRect(wb.rect);
       }
-      
+
       // Om patch är vald, starta drag om patch-verktyget är aktivt ELLER om vi just aktiverade det
       if (clickedType === 'patch' && (tool === 'patch' || patchToolJustActivated)) {
         const pb = patchBoxes[clickedElement];
@@ -1913,7 +2683,7 @@ export default function App() {
         setDragStart({ x, y, startX: pbRect.x, startY: pbRect.y });
         setOriginalRect(pb.targetRect);
       }
-      
+
       // Om shape är vald, starta drag om shape-verktyget är aktivt ELLER om vi just aktiverade det
       // (men inte om det är en resize-handle eller endpoint-handle)
       if (clickedType === 'shape' && (tool && tool.startsWith('shape') || shapeToolJustActivated) && !e.target.dataset.resizeHandle && !e.target.dataset.endpointHandle) {
@@ -1933,7 +2703,7 @@ export default function App() {
           setOriginalRect(sb.rect);
         }
       }
-      
+
       // Om comment är vald, starta drag (fungerar både med och utan comment-verktyget aktivt)
       // Men inte om användaren klickade på markören för att öppna redigering
       if (clickedType === 'comment') {
@@ -1942,12 +2712,12 @@ export default function App() {
         const isClickingOnMarker = !!markerElement;
         const cb = commentBoxes[clickedElement];
         if (!cb) return;
-        
+
         // Beräkna koordinater relativt till kommentarens egen sida för konsistens
         const commentPageNum = (cb.pageIndex !== undefined ? cb.pageIndex : 0) + 1;
         const commentCanvasRef = canvasRefs.current[commentPageNum];
         if (!commentCanvasRef) return;
-        
+
         const commentCanvasRect = commentCanvasRef.getBoundingClientRect();
         const commentX = e.clientX - commentCanvasRect.left;
         const commentY = e.clientY - commentCanvasRect.top;
@@ -1956,7 +2726,7 @@ export default function App() {
         const markerRect = markerElement?.getBoundingClientRect();
         const offsetX = markerRect ? e.clientX - markerRect.left : commentX - cbRect.x;
         const offsetY = markerRect ? e.clientY - markerRect.top : commentY - cbRect.y;
-        
+
         if (isClickingOnMarker) {
           // Om man klickade på markören, låt CommentBox hantera det (öppna redigering)
           // Men spara position för att kunna starta drag om användaren drar
@@ -1966,7 +2736,7 @@ export default function App() {
           setOriginalRect(cb.rect);
           return;
         }
-        
+
         // Om klicket inte var på markören, starta drag direkt
         setIsDragging(true);
         setDragStart({ x: commentX, y: commentY, startX: cbRect.x, startY: cbRect.y, offsetX, offsetY });
@@ -1990,22 +2760,22 @@ export default function App() {
       // sourceRect är i points (pt), konvertera till pixels för att få rätt storlek
       const sourceRectPx = rectPtToPx(sourceRect, zoom);
       // Använd samma storlek som sourceRect hade (i pixels)
-      const targetRectPx = { 
-        x, 
-        y, 
-        width: sourceRectPx.width, 
-        height: sourceRectPx.height 
+      const targetRectPx = {
+        x,
+        y,
+        width: sourceRectPx.width,
+        height: sourceRectPx.height
       };
       // Konvertera tillbaka till points för targetRect
       const targetRectPt = rectPxToPt(targetRectPx, zoom);
-      
+
       const newPatch = {
         sourceRect: sourceRect,
         sourcePageIndex: sourcePageIndex, // Spara källsidan
         targetRect: targetRectPt,
         pageIndex: clickedPage.pageNum - 1 // Targetsidan
       };
-      
+
       const newPatchBoxes = [...patchBoxes, newPatch];
       setPatchBoxes(newPatchBoxes);
       setPatchMode('select');
@@ -2017,10 +2787,10 @@ export default function App() {
 
     // För comment-verktyget: skapa kommentar direkt vid klick (om vi inte klickade på en befintlig kommentar)
     // Kontrollera också att vi inte klickade på en textarea, popup, kommentars-sidomeny eller kommentar-markör
-    const isClickingOnComment = e.target.closest('[data-comment-marker]') || 
-                                 e.target.closest('textarea') || 
-                                 e.target.closest('[data-comment-editing]') ||
-                                 e.target.closest('[data-comment-popup]');
+    const isClickingOnComment = e.target.closest('[data-comment-marker]') ||
+      e.target.closest('textarea') ||
+      e.target.closest('[data-comment-editing]') ||
+      e.target.closest('[data-comment-popup]');
     const isClickingInCommentSidebar = e.target.closest('[data-comment-sidebar]');
 
     // Om ett kommentarfält är aktivt (fokus), skapa inte en ny kommentar förrän blur hanterat klart
@@ -2029,7 +2799,7 @@ export default function App() {
       activeEl.closest('[data-comment-popup]') ||
       activeEl.closest('textarea')
     );
-    
+
     if (tool === 'comment' && clickedElement === null && !isClickingOnComment && !isActiveCommentEdit) {
       // Om vi nyss jobbade med en kommentar (vald) eller klickar i sidomenyn: skapa inte ny,
       // avmarkera och stäng verktyget så att nästa klick inte skapar ny kommentar.
@@ -2043,7 +2813,7 @@ export default function App() {
       }
       // Markör-storlek i px (24px för sticky note)
       const markerSizePx = 24;
-      
+
       // Skapa kommentar med markör-storlek (använd pxToPt för korrekt konvertering)
       const rectPx = {
         x: x - markerSizePx / 2, // Centrera markören på klickpunkten
@@ -2052,10 +2822,10 @@ export default function App() {
         height: markerSizePx
       };
       const rectPt = rectPxToPt(rectPx, zoom);
-      
+
       // Generera unikt ID för kommentaren
       const commentId = `comment-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      
+
       const newCommentBox = {
         id: commentId,
         rect: rectPt,
@@ -2065,7 +2835,7 @@ export default function App() {
         backgroundColor: commentSettings.backgroundColor, // Spara färg
         icon: commentSettings.icon // Spara ikon-typ
       };
-      
+
       const newCommentBoxes = [...commentBoxes, newCommentBox];
       setCommentBoxes(newCommentBoxes);
       const newIndex = commentBoxes.length;
@@ -2073,7 +2843,7 @@ export default function App() {
       setSelectedType('comment');
       // Behåll kommentar-verktyget aktivt så användaren kan lägga till fler kommentarer
       saveToHistory(null, null, null, null, newCommentBoxes);
-      
+
       // Öppna redigeringsläge automatiskt för nya kommentarer
       // Detta görs genom att sätta en flagga som CommentBox kan läsa
       setTimeout(() => {
@@ -2082,7 +2852,7 @@ export default function App() {
         updatedBoxes[newIndex] = { ...updatedBoxes[newIndex], isNew: true };
         setCommentBoxes(updatedBoxes);
       }, 50);
-      
+
       return;
     }
 
@@ -2091,24 +2861,24 @@ export default function App() {
     if (tool === 'text' && clickedElement === null && selectedType !== 'text') {
       // Spara scroll-position innan vi skapar textrutan för att förhindra att sidan hoppar
       const savedScrollTop = containerRef.current?.scrollTop || 0;
-      
+
       // Skapa en textruta med minimal initial storlek (ungefär en bokstav)
       const fontSizePt = textSettings.fontSizePt || 12;
       const fontSizePx = fontSizePt * zoom;
       // Använd en mycket liten initial bredd - textrutan expanderar automatiskt när man skriver
       const defaultWidthPx = fontSizePx * 0.6; // Ungefär en bokstav
       const defaultHeightPx = fontSizePx * 1.1; // En rad höjd med kompakt line-height
-      // Justera y-positionen så att textens baseline hamnar där användaren klickade
-      // Baseline är ungefär 80% av fontstorleken från toppen av textrutan
-      const baselineOffset = fontSizePx * 0.8; // Offset för att få baseline att hamna på klickpunkten
+      // Justera y-positionen så att textrutan är vertikalt centrerad på klickpunkten
+      // Med halva höjden som offset hamnar mitten av textrutan på klickpunkten
+      const centerOffset = defaultHeightPx / 2; // Offset för att centrera textrutan vertikalt
       const rectPx = {
         x: x,
-        y: y - baselineOffset, // Flytta upp så att baseline hamnar på klickpunkten
+        y: y - centerOffset, // Flytta upp så att mitten av textrutan hamnar på klickpunkten
         width: defaultWidthPx,
         height: defaultHeightPx
       };
       const rectPt = rectPxToPt(rectPx, zoom);
-      
+
       const newTextBox = {
         rect: rectPt,
         text: '',
@@ -2128,7 +2898,7 @@ export default function App() {
       setSelectedElement(newIndex);
       setSelectedType('text');
       saveToHistory(newTextBoxes, null, null, null, commentBoxes);
-      
+
       // Återställ scroll-position efter att DOM har uppdaterats
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
@@ -2137,16 +2907,16 @@ export default function App() {
           }
         });
       });
-      
+
       // Ta bort isNew-flaggan efter en delay (längre delay för att säkerställa att autoEdit hinner fungera)
       setTimeout(() => {
-        setTextBoxes(prev => prev.map((tb, i) => 
+        setTextBoxes(prev => prev.map((tb, i) =>
           i === newIndex ? { ...tb, isNew: false } : tb
         ));
       }, 1000); // Ökad delay för att säkerställa att fokusering hinner fungera
       return;
     }
-    
+
     // Om vi klickade utanför alla element, avmarkera allt
     // VIKTIGT: Detta måste komma FÖRE ritningslogiken så att valda element avmarkeras först
     if (clickedElement === null && !e.target.closest('textarea')) {
@@ -2157,7 +2927,7 @@ export default function App() {
         setTool(null); // Avaktivera form-verktyget
         return; // Avbryt så att form-ritningslogiken inte körs
       }
-      
+
       // Om whiteout är vald när vi klickar utanför, avmarkera den och avaktivera whiteout-verktyget
       if (selectedType === 'whiteout' && tool === 'whiteout') {
         setSelectedElement(null);
@@ -2165,7 +2935,7 @@ export default function App() {
         setTool(null); // Avaktivera whiteout-verktyget
         return; // Avbryt så att whiteout-ritningslogiken inte körs
       }
-      
+
       // Om text är vald när vi klickar utanför, avmarkera den och avaktivera text-verktyget
       if (selectedType === 'text' && tool === 'text') {
         setSelectedElement(null);
@@ -2173,11 +2943,11 @@ export default function App() {
         setTool(null); // Avaktivera text-verktyget
         return; // Avbryt så att text-ritningslogiken inte körs
       }
-      
+
       setSelectedElement(null);
       setSelectedType(null);
     }
-    
+
     // För whiteout, börja rita (endast om verktyget är aktivt och vi inte klickade på en befintlig ruta)
     // VIKTIGT: Detta måste komma EFTER avmarkeringslogiken så att valda whiteout-element avmarkeras först
     if (tool === 'whiteout' && clickedElement === null && selectedType !== 'whiteout') {
@@ -2205,11 +2975,47 @@ export default function App() {
       setDrawingPage(clickedPage.pageNum);
       return;
     }
-    
+
+    // Link Tool: skapar en ny länkruta
+    if (tool === 'link' && clickedElement === null) {
+      setIsDrawing(true);
+      setDrawStart({ x, y });
+      setCurrentRect({ x, y, width: 0, height: 0 });
+      setDrawingPage(clickedPage.pageNum);
+      return;
+    }
+
     // För shape-verktyget, börja rita (endast om verktyget är aktivt, vi inte klickade på en befintlig shape, OCH ingen form är vald)
     // VIKTIGT: Detta måste komma EFTER avmarkeringslogiken så att valda former avmarkeras först
     if (tool && tool.startsWith('shape') && clickedElement === null && selectedType !== 'shape') {
       const shapeType = tool.replace('shape-', '');
+
+      // För cross och check: placera direkt med fast storlek (ingen ritning krävs)
+      if (shapeType === 'cross' || shapeType === 'check') {
+        const fixedSize = 24; // Fast storlek för cross/check i pixels
+        const rectPt = rectPxToPt({ x: x - fixedSize / 2, y: y - fixedSize / 2, width: fixedSize, height: fixedSize }, zoom);
+
+        const newShape = {
+          type: shapeType,
+          pageIndex: clickedPage.pageNum - 1,
+          rect: {
+            x: rectPt.x,
+            y: rectPt.y,
+            width: rectPt.width,
+            height: rectPt.height
+          },
+          strokeColor: shapeSettings.strokeColor || '#000000',
+          strokeWidth: shapeSettings.strokeWidth || 2,
+          fillColor: shapeSettings.fillColor || 'transparent'
+        };
+
+        const newShapeBoxes = [...shapeBoxes, newShape];
+        setShapeBoxes(newShapeBoxes);
+        saveToHistory(null, null, null, newShapeBoxes, commentBoxes);
+        // Markera INTE automatiskt - detta förhindrar oönskad scroll
+        return;
+      }
+
       // För linjer och pilar: punkt-till-punkt ritning
       if (shapeType === 'line' || shapeType === 'arrow') {
         setIsDrawing(true);
@@ -2241,7 +3047,7 @@ export default function App() {
     // Hitta vilken sida musen är över
     const hoveredPage = findPageFromMousePosition(e);
     if (!hoveredPage || !canvasRefs.current[hoveredPage.pageNum]) return;
-    
+
     const canvasRef = canvasRefs.current[hoveredPage.pageNum];
     const canvasRect = canvasRef.getBoundingClientRect();
     const x = e.clientX - canvasRect.left;
@@ -2252,6 +3058,13 @@ export default function App() {
       setHighlightCursor({ pageNum: hoveredPage.pageNum, x, y });
     } else if (highlightCursor) {
       setHighlightCursor(null);
+    }
+
+    // Pen cursor
+    if (tool === 'pen') {
+      setPenCursor({ pageNum: hoveredPage.pageNum, x, y });
+    } else if (penCursor) {
+      setPenCursor(null);
     }
     if (tool === 'eraser') {
       setEraserCursor({ pageNum: hoveredPage.pageNum, x, y });
@@ -2306,20 +3119,30 @@ export default function App() {
       return;
     }
 
+    // Pen tool: lägg till punkter vid ritning
+    if (isDrawing && tool === 'pen' && currentPenStroke && drawingPage === hoveredPage.pageNum) {
+      const updatedStroke = {
+        ...currentPenStroke,
+        points: [...(currentPenStroke.points || []), { x, y }]
+      };
+      setCurrentPenStroke(updatedStroke);
+      return;
+    }
+
     // Hantera resize av text
     if (isResizing && resizeHandle && originalRect && originalFontSize !== null && selectedElement !== null && selectedType === 'text') {
       // Sätt flaggan för att förhindra useEffect-loops
       isResizingRef.current = true;
-      
+
       const tb = textBoxes[selectedElement];
       const origRectPx = rectPtToPx(originalRect, zoom);
       let newRectPx = { ...origRectPx };
-      
+
       // Sätt textrutans kant direkt till muspekarens position
       // dragStart innehåller original kant-positionen
       const originalEdgeX = dragStart.x;
       const originalEdgeY = dragStart.y;
-      
+
       if (resizeHandle.includes('n')) {
         // Övre kant följer muspekaren
         const diff = y - originalEdgeY;
@@ -2340,7 +3163,7 @@ export default function App() {
         // Högra kant följer muspekaren
         newRectPx.width = x - origRectPx.x;
       }
-      
+
       // Minsta storlek - justera position om nödvändigt
       if (newRectPx.width < 20) {
         if (resizeHandle.includes('w')) {
@@ -2364,16 +3187,16 @@ export default function App() {
           newRectPx.height = 20;
         }
       }
-      
+
       // Beräkna skalningsfaktor baserat på förändringen i storlek
       // Använd genomsnittet av width och height för skalning
       const scaleX = newRectPx.width / origRectPx.width;
       const scaleY = newRectPx.height / origRectPx.height;
       const scale = (scaleX + scaleY) / 2; // Genomsnittlig skalning
-      
+
       // Beräkna ny fontstorlek (minst MIN_FONT_PT) och avrunda till heltal
       const newFontSizePt = Math.round(Math.max(MIN_FONT_PT, originalFontSize * scale));
-      
+
       const newRectPt = rectPxToPt(newRectPx, zoom);
       const newBoxes = [...textBoxes];
       const sampleRectPx = rectPtToPx(tb.originalRect || tb.rect, zoom);
@@ -2381,21 +3204,21 @@ export default function App() {
         ? (sampleRectAverageColor((tb.pageIndex ?? (currentPage - 1)) + 1, sampleRectPx) || tb.maskColor)
         : tb.maskColor;
 
-      newBoxes[selectedElement] = markTextBoxDirty(tb, { 
-        ...tb, 
+      newBoxes[selectedElement] = markTextBoxDirty(tb, {
+        ...tb,
         rect: newRectPt,
         fontSizePt: newFontSizePt,
         maskColor: sampledColor
       });
       setTextBoxes(newBoxes);
-      
+
       // Uppdatera också textSettings så att render-logiken använder rätt fontstorlek
       // Detta behövs eftersom render-logiken använder textSettings för valda textboxar
       setTextSettings(prev => ({
         ...prev,
         fontSizePt: newFontSizePt
       }));
-      
+
       return;
     }
 
@@ -2404,12 +3227,12 @@ export default function App() {
       const wb = whiteoutBoxes[selectedElement];
       const origRectPx = rectPtToPx(originalRect, zoom);
       let newRectPx = { ...origRectPx };
-      
+
       // Beräkna ny position och storlek baserat på resize-handle
       // dragStart.x och dragStart.y är initial mouse position när resize startade
       const startX = dragStart.x;
       const startY = dragStart.y;
-      
+
       if (resizeHandle.includes('n')) {
         const diff = y - startY;
         newRectPx.y = origRectPx.y + diff;
@@ -2426,7 +3249,7 @@ export default function App() {
       if (resizeHandle.includes('e')) {
         newRectPx.width = origRectPx.width + (x - startX);
       }
-      
+
       // Minsta storlek
       if (newRectPx.width < 20) {
         if (resizeHandle.includes('w')) {
@@ -2440,48 +3263,48 @@ export default function App() {
         }
         newRectPx.height = 20;
       }
-      
+
       const newRectPt = rectPxToPt(newRectPx, zoom);
       const newBoxes = [...whiteoutBoxes];
       newBoxes[selectedElement] = { ...wb, rect: newRectPt };
       setWhiteoutBoxes(newBoxes);
       return;
     }
-    
+
     // Hantera rotation av text och whiteout
     if (isRotating && rotationStart && selectedElement !== null) {
       const { centerX, centerY } = rotationStart;
-      
+
       // Beräkna vinklar från centrum till start- och nuvarande musposition
       const startAngle = Math.atan2(rotationStart.y - centerY, rotationStart.x - centerX) * (180 / Math.PI);
       const currentAngle = Math.atan2(y - centerY, x - centerX) * (180 / Math.PI);
-      
+
       // Beräkna vinkelskillnaden
       let angleDiff = currentAngle - startAngle;
-      
+
       // Normalisera vinkelskillnaden till -180 till 180 för att hantera övergångar över 0/360
       while (angleDiff > 180) angleDiff -= 360;
       while (angleDiff < -180) angleDiff += 360;
-      
+
       // Lägg till skillnaden till initial rotation
       let newRotation = initialRotation + angleDiff;
-      
+
       // Normalisera till 0-360
       newRotation = newRotation % 360;
       if (newRotation < 0) newRotation += 360;
-      
+
       if (selectedType === 'text') {
         const tb = textBoxes[selectedElement];
         if (!tb) return;
-      const newBoxes = [...textBoxes];
+        const newBoxes = [...textBoxes];
         const sampleRectPx = rectPtToPx(tb.originalRect || tb.rect, zoom);
         const sampledColor = tb.isImported
           ? (sampleRectAverageColor((tb.pageIndex ?? (currentPage - 1)) + 1, sampleRectPx) || tb.maskColor)
           : tb.maskColor;
 
         newBoxes[selectedElement] = markTextBoxDirty(tb, { ...tb, rotation: newRotation, maskColor: sampledColor });
-      setTextBoxes(newBoxes);
-      return;
+        setTextBoxes(newBoxes);
+        return;
       } else if (selectedType === 'whiteout') {
         const wb = whiteoutBoxes[selectedElement];
         if (!wb) return;
@@ -2491,7 +3314,7 @@ export default function App() {
         return;
       }
     }
-    
+
     // Erasing highlights (frihand) - bit-för-bit
     if (isErasing && tool === 'eraser' && drawingPage === hoveredPage.pageNum) {
       const radiusPx = eraserSettings.size / 2;
@@ -2531,10 +3354,56 @@ export default function App() {
         // Om inga segment återstår, stroke tas bort
       }
 
-      if (newStrokes.length !== highlightStrokes.length) {
+      // Kontrollera ändringar genom att jämföra totalt antal punkter
+      const oldPointCount = highlightStrokes.reduce((sum, s) => sum + (s.points?.length || 0), 0);
+      const newPointCount = newStrokes.reduce((sum, s) => sum + (s.points?.length || 0), 0);
+
+      if (newStrokes.length !== highlightStrokes.length || newPointCount !== oldPointCount) {
         setHighlightStrokes(newStrokes);
         setHasErasedThisDrag(true);
       }
+
+      // Samma logik för Pen Strokes
+      const newPenStrokes = [];
+      for (const stroke of penStrokes) {
+        if (stroke.pageIndex !== (hoveredPage.pageNum - 1)) {
+          newPenStrokes.push(stroke);
+          continue;
+        }
+
+        const pts = stroke.points || [];
+        const segments = [];
+        let current = [];
+
+        for (const p of pts) {
+          const dx = erasePt.x - p.x;
+          const dy = erasePt.y - p.y;
+          const hit = Math.sqrt(dx * dx + dy * dy) <= radiusPt;
+
+          if (!hit) {
+            current.push(p);
+          } else {
+            if (current.length > 1) segments.push(current);
+            current = [];
+          }
+        }
+        if (current.length > 1) segments.push(current);
+
+        if (segments.length === 1) {
+          newPenStrokes.push({ ...stroke, points: segments[0] });
+        } else if (segments.length > 1) {
+          segments.forEach((seg) => newPenStrokes.push({ ...stroke, points: seg }));
+        }
+      }
+
+      const oldPenPointCount = penStrokes.reduce((sum, s) => sum + (s.points?.length || 0), 0);
+      const newPenPointCount = newPenStrokes.reduce((sum, s) => sum + (s.points?.length || 0), 0);
+
+      if (newPenStrokes.length !== penStrokes.length || newPenPointCount !== oldPenPointCount) {
+        setPenStrokes(newPenStrokes);
+        setHasErasedThisDrag(true);
+      }
+
       return;
     }
 
@@ -2544,14 +3413,14 @@ export default function App() {
       const origRectPx = rectPtToPx(originalRect, zoom);
       const dx = x - dragStart.x;
       const dy = y - dragStart.y;
-      
+
       const newRectPx = {
         x: dragStart.startX + dx,
         y: dragStart.startY + dy,
         width: origRectPx.width,
         height: origRectPx.height
       };
-      
+
       const newRectPt = rectPxToPt(newRectPx, zoom);
       const sampleRectPx = rectPtToPx(tb.originalRect || tb.rect, zoom);
       const sampledColor = tb.isImported
@@ -2563,52 +3432,52 @@ export default function App() {
       setTextBoxes(newBoxes);
       return;
     }
-    
+
     // Hantera drag av whiteout
     if (isDragging && dragStart && selectedElement !== null && selectedType === 'whiteout') {
       const wb = whiteoutBoxes[selectedElement];
       const origRectPx = rectPtToPx(originalRect, zoom);
       const dx = x - dragStart.x;
       const dy = y - dragStart.y;
-      
+
       const newRectPx = {
         x: dragStart.startX + dx,
         y: dragStart.startY + dy,
         width: origRectPx.width,
         height: origRectPx.height
       };
-      
+
       const newRectPt = rectPxToPt(newRectPx, zoom);
       const newBoxes = [...whiteoutBoxes];
       newBoxes[selectedElement] = { ...wb, rect: newRectPt };
       setWhiteoutBoxes(newBoxes);
       return;
     }
-    
+
     // Hantera drag av comment
     // Starta drag om användaren har dragStart, musknappen är nedtryckt och faktiskt drar (rör sig mer än 5px)
     if (dragStart && isMouseDown && selectedElement !== null && selectedType === 'comment') {
       const cb = commentBoxes[selectedElement];
       if (!cb) return;
-      
+
       // Beräkna koordinater relativt till kommentarens egen sida för konsistens
       const commentPageNum = (cb.pageIndex !== undefined ? cb.pageIndex : 0) + 1;
       const commentCanvasRef = canvasRefs.current[commentPageNum];
       if (!commentCanvasRef) return;
-      
+
       const commentCanvasRect = commentCanvasRef.getBoundingClientRect();
       const commentX = e.clientX - commentCanvasRect.left;
       const commentY = e.clientY - commentCanvasRect.top;
-      
+
       const dx = commentX - dragStart.x;
       const dy = commentY - dragStart.y;
       const distance = Math.sqrt(dx * dx + dy * dy);
-      
+
       // Starta drag om användaren har dragit mer än 5px
       if (distance > 5 && !isDragging) {
         setIsDragging(true);
       }
-      
+
       // Om drag är aktivt, uppdatera position
       if (isDragging || distance > 5) {
         const origRectPx = rectPtToPx(originalRect, zoom);
@@ -2622,7 +3491,7 @@ export default function App() {
           width: origRectPx.width,
           height: origRectPx.height
         };
-        
+
         const newRectPt = rectPxToPt(newRectPx, zoom);
         const newBoxes = [...commentBoxes];
         newBoxes[selectedElement] = { ...cb, rect: newRectPt };
@@ -2630,44 +3499,47 @@ export default function App() {
         return;
       }
     }
-    
+
     // Hantera drag av patch
     if (isDragging && dragStart && selectedElement !== null && selectedType === 'patch') {
       const pb = patchBoxes[selectedElement];
       const origRectPx = rectPtToPx(originalRect, zoom);
       const dx = x - dragStart.x;
       const dy = y - dragStart.y;
-      
+
       const newRectPx = {
         x: dragStart.startX + dx,
         y: dragStart.startY + dy,
         width: origRectPx.width,
         height: origRectPx.height
       };
-      
+
       const newRectPt = rectPxToPt(newRectPx, zoom);
       const newBoxes = [...patchBoxes];
       newBoxes[selectedElement] = { ...pb, targetRect: newRectPt };
       setPatchBoxes(newBoxes);
       return;
     }
-    
-    // Hantera resize av shape (endast för rektanglar/cirklar, inte linjer/pilar)
-    if (isResizing && resizeHandle && originalRect && selectedElement !== null && selectedType === 'shape') {
-      const sb = shapeBoxes[selectedElement];
-      const isLineOrArrow = (sb.type === 'line' || sb.type === 'arrow') && sb.startPoint && sb.endPoint;
-      if (!isLineOrArrow) {
-        // Endast resize rektanglar/cirklar
+
+    // Hantera resize av shape (rektanglar/cirklar) och LINKS
+    if (isResizing && dragStart && originalRect && selectedElement !== null && (selectedType === 'shape' || selectedType === 'link')) {
+      const isShape = selectedType === 'shape';
+      const sb = isShape ? shapeBoxes[selectedElement] : linkBoxes[selectedElement];
+      const isLineOrArrow = isShape && (sb.type === 'line' || sb.type === 'arrow') && sb.startPoint && sb.endPoint;
+
+      if (!isLineOrArrow && sb.rect) {
+        // Rektangel-baserad resize
         const origRectPx = rectPtToPx(originalRect, zoom);
-        let newRectPx = { ...origRectPx };
-        
+        const x = e.clientX - canvasRect.left;
+        const y = e.clientY - canvasRect.top;
+
+        const newRectPx = { ...origRectPx };
         const startX = dragStart.x;
         const startY = dragStart.y;
-        
+
         if (resizeHandle.includes('n')) {
-          const diff = y - startY;
-          newRectPx.y = origRectPx.y + diff;
-          newRectPx.height = origRectPx.height - diff;
+          newRectPx.y = y;
+          newRectPx.height = origRectPx.height + (origRectPx.y - y);
         }
         if (resizeHandle.includes('s')) {
           newRectPx.height = origRectPx.height + (y - startY);
@@ -2680,7 +3552,7 @@ export default function App() {
         if (resizeHandle.includes('e')) {
           newRectPx.width = origRectPx.width + (x - startX);
         }
-        
+
         // Minsta storlek
         if (newRectPx.width < 20) {
           if (resizeHandle.includes('w')) {
@@ -2694,27 +3566,33 @@ export default function App() {
           }
           newRectPx.height = 20;
         }
-        
+
         const newRectPt = rectPxToPt(newRectPx, zoom);
-        const newBoxes = [...shapeBoxes];
-        newBoxes[selectedElement] = { ...sb, rect: newRectPt };
-        setShapeBoxes(newBoxes);
+        if (isShape) {
+          const newBoxes = [...shapeBoxes];
+          newBoxes[selectedElement] = { ...sb, rect: newRectPt };
+          setShapeBoxes(newBoxes);
+        } else {
+          const newBoxes = [...linkBoxes];
+          newBoxes[selectedElement] = { ...sb, rect: newRectPt };
+          setLinkBoxes(newBoxes);
+        }
       }
       return;
     }
-    
+
     // Hantera endpoint-dragning för linjer/pilar (har högre prioritet än hela linjen/pilen)
     if (isDraggingEndpoint && draggingEndpointType && originalStartPoint && originalEndPoint && selectedElement !== null && selectedType === 'shape') {
       const sb = shapeBoxes[selectedElement];
       if ((sb.type === 'line' || sb.type === 'arrow') && sb.startPoint && sb.endPoint) {
         const dx = x - dragStart.x;
         const dy = y - dragStart.y;
-        
+
         const startPointPx = pointPtToPx(originalStartPoint, zoom);
         const endPointPx = pointPtToPx(originalEndPoint, zoom);
-        
+
         let newStartPointPx, newEndPointPx;
-        
+
         if (draggingEndpointType === 'start') {
           // Flytta startpunkt
           newStartPointPx = { x: startPointPx.x + dx, y: startPointPx.y + dy };
@@ -2724,10 +3602,10 @@ export default function App() {
           newStartPointPx = startPointPx;
           newEndPointPx = { x: endPointPx.x + dx, y: endPointPx.y + dy };
         }
-        
+
         const newStartPointPt = pointPxToPt(newStartPointPx, zoom);
         const newEndPointPt = pointPxToPt(newEndPointPx, zoom);
-        
+
         const newBoxes = [...shapeBoxes];
         newBoxes[selectedElement] = {
           ...sb,
@@ -2738,7 +3616,7 @@ export default function App() {
       }
       return;
     }
-    
+
     // Hantera drag av hela linjen/pilen (endast om inte endpoint-dragging)
     if (isDragging && dragStart && originalStartPoint && originalEndPoint && selectedElement !== null && selectedType === 'shape') {
       const sb = shapeBoxes[selectedElement];
@@ -2747,16 +3625,16 @@ export default function App() {
         // Flytta båda endpoints tillsammans
         const dx = x - dragStart.x;
         const dy = y - dragStart.y;
-        
+
         const startPointPx = pointPtToPx(originalStartPoint, zoom);
         const endPointPx = pointPtToPx(originalEndPoint, zoom);
-        
+
         const newStartPointPx = { x: startPointPx.x + dx, y: startPointPx.y + dy };
         const newEndPointPx = { x: endPointPx.x + dx, y: endPointPx.y + dy };
-        
+
         const newStartPointPt = pointPxToPt(newStartPointPx, zoom);
         const newEndPointPt = pointPxToPt(newEndPointPx, zoom);
-        
+
         const newBoxes = [...shapeBoxes];
         newBoxes[selectedElement] = {
           ...sb,
@@ -2767,7 +3645,7 @@ export default function App() {
         return;
       }
     }
-    
+
     // Hantera drag av shape (rektanglar/cirklar)
     if (isDragging && dragStart && originalRect && selectedElement !== null && selectedType === 'shape') {
       const sb = shapeBoxes[selectedElement];
@@ -2777,14 +3655,14 @@ export default function App() {
         const origRectPx = rectPtToPx(originalRect, zoom);
         const dx = x - dragStart.x;
         const dy = y - dragStart.y;
-        
+
         const newRectPx = {
           x: dragStart.startX + dx,
           y: dragStart.startY + dy,
           width: origRectPx.width,
           height: origRectPx.height
         };
-        
+
         const newRectPt = rectPxToPt(newRectPx, zoom);
         const newBoxes = [...shapeBoxes];
         newBoxes[selectedElement] = { ...sb, rect: newRectPt };
@@ -2793,15 +3671,37 @@ export default function App() {
       return;
     }
 
+    // Hantera drag av link
+    if (isDragging && dragStart && selectedElement !== null && selectedType === 'link') {
+      const lb = linkBoxes[selectedElement];
+      const origRectPx = rectPtToPx(originalRect, zoom);
+      const dx = x - dragStart.x;
+      const dy = y - dragStart.y;
+
+      const newRectPx = {
+        x: dragStart.startX + dx,
+        y: dragStart.startY + dy,
+        width: origRectPx.width,
+        height: origRectPx.height
+      };
+
+      const newRectPt = rectPxToPt(newRectPx, zoom);
+      const newBoxes = [...linkBoxes];
+      newBoxes[selectedElement] = { ...lb, rect: newRectPt };
+      setLinkBoxes(newBoxes);
+      setLinkBoxes(newBoxes);
+      return;
+    }
+
     // Hantera rita nya element
     if (!isDrawing) return;
-    
+
     // För linjer/pilar: punkt-till-punkt ritning
     if (lineStartPoint && (tool === 'shape-line' || tool === 'shape-arrow')) {
       setLineEndPoint({ x, y });
       return;
     }
-    
+
     // För andra shapes: rektangel-baserad ritning
     if (!drawStart) return;
 
@@ -2816,14 +3716,14 @@ export default function App() {
   const handleMouseUp = () => {
     // Alltid sätt isMouseDown till false när musknappen släpps
     setIsMouseDown(false);
-    
+
     // Rensa dragStart för kommentarer även om drag inte startade
     // Detta förhindrar att kommentaren följer musen efter klick utan drag
     if (dragStart && selectedType === 'comment' && !isDragging) {
       setDragStart(null);
       setOriginalRect(null);
     }
-    
+
     // Stoppa panning
     if (isPanning) {
       setIsPanning(false);
@@ -2847,6 +3747,23 @@ export default function App() {
       return;
     }
 
+    // Avsluta pen-ritning
+    if (isDrawing && tool === 'pen' && currentPenStroke && currentPenStroke.points && currentPenStroke.points.length > 1) {
+      const strokePt = {
+        ...currentPenStroke,
+        points: currentPenStroke.points.map((p) => pointPxToPt(p, zoom))
+      };
+      const newStrokes = [...penStrokes, strokePt];
+      setPenStrokes(newStrokes);
+      saveToHistory(null, null, null, null, null, null, newStrokes);
+    }
+    setCurrentPenStroke(null);
+    if (isDrawing && tool === 'pen') {
+      setIsDrawing(false);
+      setDrawingPage(null);
+      return;
+    }
+
     if (isErasing) {
       if (hasErasedThisDrag) {
         saveToHistory(null, null, null, null, null, highlightStrokes);
@@ -2863,7 +3780,7 @@ export default function App() {
       setEraserCursor(null);
     }
 
-      // Hantera resize/drag/rotation avslut
+    // Hantera resize/drag/rotation avslut
     if (isResizing || isDragging || isDraggingEndpoint || isRotating) {
       if (isRotating && selectedElement !== null && selectedType === 'text') {
         setIsRotating(false);
@@ -2892,6 +3809,9 @@ export default function App() {
       } else if (selectedElement !== null && selectedType === 'comment') {
         // Spara till history för comment drag
         saveToHistory(null, null, null, null, commentBoxes);
+      } else if (selectedElement !== null && selectedType === 'link') {
+        // Spara till history för link drag/resize
+        saveToHistory(null, null, null, null, null);
       }
       setIsResizing(false);
       setIsDragging(false);
@@ -2909,23 +3829,23 @@ export default function App() {
       // Återställ resize-flaggan så att useEffect kan köras igen
       isResizingRef.current = false;
     }
-    
+
     // Hantera punkt-till-punkt ritning för linjer/pilar
     if (isDrawing && lineStartPoint && lineEndPoint && (tool === 'shape-line' || tool === 'shape-arrow')) {
       const drawingPageNum = drawingPage || currentPage;
       const shapeType = tool.replace('shape-', '');
-      
+
       // Kontrollera minsta längd (10-15 pixlar)
       const length = Math.sqrt(
-        Math.pow(lineEndPoint.x - lineStartPoint.x, 2) + 
+        Math.pow(lineEndPoint.x - lineStartPoint.x, 2) +
         Math.pow(lineEndPoint.y - lineStartPoint.y, 2)
       );
       const minLength = 15;
-      
+
       if (length >= minLength) {
         const startPointPt = pointPxToPt(lineStartPoint, zoom);
         const endPointPt = pointPxToPt(lineEndPoint, zoom);
-        
+
         const newShape = {
           startPoint: startPointPt,
           endPoint: endPointPt,
@@ -2940,14 +3860,14 @@ export default function App() {
         setSelectedType('shape');
         saveToHistory(null, null, null, newShapeBoxes, commentBoxes);
       }
-      
+
       setIsDrawing(false);
       setLineStartPoint(null);
       setLineEndPoint(null);
       setDrawingPage(null);
       return;
     }
-    
+
     if (!isDrawing || !drawStart || !currentRect) {
       setIsDrawing(false);
       setLineStartPoint(null);
@@ -2989,10 +3909,10 @@ export default function App() {
       setSelectedElement(newIndex);
       setSelectedType('text');
       saveToHistory(newTextBoxes, null, null, null, commentBoxes);
-      
+
       // Ta bort isNew-flaggan efter en kort delay för att undvika att den alltid är i edit-läge
       setTimeout(() => {
-        setTextBoxes(prev => prev.map((tb, i) => 
+        setTextBoxes(prev => prev.map((tb, i) =>
           i === newIndex ? { ...tb, isNew: false } : tb
         ));
       }, 100);
@@ -3049,11 +3969,25 @@ export default function App() {
       setSelectedElement(shapeBoxes.length);
       setSelectedType('shape');
       saveToHistory(null, null, null, newShapeBoxes, commentBoxes);
+    } else if (tool === 'link') {
+      const drawingPageNum = drawingPage || currentPage;
+      const newLink = {
+        id: Date.now().toString(),
+        rect: rectPt,
+        pageIndex: drawingPageNum - 1,
+        linkType: 'url',
+        value: ''
+      };
+      const newBoxes = [...linkBoxes, newLink];
+      setLinkBoxes(newBoxes);
+      setSelectedElement(newBoxes.length - 1);
+      setSelectedType('link');
+      setTool(null);
     } else if (tool && tool.startsWith('shape')) {
       // Hitta vilken sida som ritas på
       const drawingPageNum = drawingPage || currentPage;
       const shapeType = tool.replace('shape-', ''); // Extrahera shape-typ från tool (t.ex. 'rectangle' från 'shape-rectangle')
-      
+
       // För linjer/pilar: detta ska inte hända här eftersom de hanteras i punkt-till-punkt sektionen ovan
       // Detta är endast för rektanglar/cirklar
       if (shapeType !== 'line' && shapeType !== 'arrow') {
@@ -3090,12 +4024,12 @@ export default function App() {
   // Scrolla till en specifik sida
   const scrollToPage = (pageNum) => {
     if (!containerRef.current || !pageContainerRefs.current[pageNum]) return;
-    
+
     const pageContainer = pageContainerRefs.current[pageNum];
     const container = containerRef.current;
     const containerRect = container.getBoundingClientRect();
     const pageTop = pageContainer.offsetTop;
-    
+
     // Scrolla så att sidan är i mitten av viewport
     const scrollPosition = pageTop - containerRect.height / 2 + pageContainer.offsetHeight / 2;
     container.scrollTo({
@@ -3104,28 +4038,57 @@ export default function App() {
     });
   };
 
+  // Scrolla till ett specifikt element (rect i punkter)
+  const scrollToElement = (pageIndex, rectPt) => {
+    if (!containerRef.current || !pageContainerRefs.current[pageIndex + 1]) return;
+
+    const pageContainer = pageContainerRefs.current[pageIndex + 1];
+    const container = containerRef.current;
+
+    // Konvertera rect från pt till px med nuvarande zoom
+    const rectPx = rectPtToPx(rectPt, zoom);
+
+    // Sidans position relativt containern
+    const pageTop = pageContainer.offsetTop;
+    const pageLeft = pageContainer.offsetLeft;
+
+    // Elementets position relativt containern
+    const elementTop = pageTop + rectPx.y;
+    const elementLeft = pageLeft + rectPx.x;
+
+    // Scrolla så elementet hamnar i mitten (med marginal)
+    const containerHeight = container.clientHeight;
+    const targetScrollTop = elementTop - containerHeight / 2 + rectPx.height / 2;
+
+    container.scrollTo({
+      top: Math.max(0, targetScrollTop),
+      left: Math.max(0, elementLeft - container.clientWidth / 2 + rectPx.width / 2),
+      behavior: 'smooth'
+    });
+  };
+
   // Hjälpfunktion: Exportera PDF från pdfDoc genom att rendera till bilder (för detached ArrayBuffer)
   const exportPDFFromPdfDoc = async (pdfDocRef) => {
     const newPdfDoc = await PDFDocument.create();
     const numPages = pdfDocRef.numPages;
-    
+
     // Processa varje sida
     for (let pageIndex = 0; pageIndex < numPages; pageIndex++) {
       const page = await pdfDocRef.getPage(pageIndex + 1);
       const viewport = page.getViewport({ scale: 2.0 });
-      
+
       // Skapa canvas för att rendera PDF-sidan
       const canvas = document.createElement('canvas');
       canvas.width = viewport.width;
       canvas.height = viewport.height;
       const context = canvas.getContext('2d');
-      
+
       // Rendera PDF-sidan till canvas
       await page.render({
         canvasContext: context,
         viewport: viewport
       }).promise;
-      
+
       // Konvertera canvas till PNG
       const imageData = canvas.toDataURL('image/png');
       const base64String = imageData.split(',')[1];
@@ -3134,12 +4097,12 @@ export default function App() {
       for (let i = 0; i < binaryString.length; i++) {
         imageBytes[i] = binaryString.charCodeAt(i);
       }
-      
+
       // Bädda in bilden i ny PDF
       const image = await newPdfDoc.embedPng(imageBytes);
       const { width, height } = page.getViewport({ scale: 1.0 });
       const pdfPage = newPdfDoc.addPage([width, height]);
-      
+
       // Rita PDF-sidan som bakgrund
       pdfPage.drawImage(image, {
         x: 0,
@@ -3148,7 +4111,7 @@ export default function App() {
         height: height
       });
     }
-    
+
     const pdfBytes = await newPdfDoc.save();
     return new Uint8Array(pdfBytes);
   };
@@ -3186,14 +4149,14 @@ export default function App() {
       }
 
       // Ladda PDF med pdf-lib
-      const pdfLibDoc = await PDFDocument.load(pdfDataCopy, { 
+      const pdfLibDoc = await PDFDocument.load(pdfDataCopy, {
         ignoreEncryption: true,
         updateMetadata: false,
         parseSpeed: 0
       });
 
       const pages = pdfLibDoc.getPages();
-      
+
       // Rotera valda sidor (pageNumbers är 1-indexerade)
       for (const pageNum of pageNumbers) {
         const pageIndex = pageNum - 1; // Konvertera till 0-indexerad
@@ -3222,7 +4185,7 @@ export default function App() {
             // Om getRotation() misslyckas, antag 0 grader
             currentRotation = 0;
           }
-          
+
           // Lägg till vinkeln och normalisera till 0-270
           const newRotation = (currentRotation + angle) % 360;
           // pdf-lib kräver att rotationen skickas som ett Rotation-objekt, använd degrees()
@@ -3239,14 +4202,14 @@ export default function App() {
       // Ladda om med PDF.js
       const loadingTask = pdfjsLib.getDocument({ data: pdfJsBytes });
       const newDoc = await loadingTask.promise;
-      
+
       setPdfData(stateBytes.buffer.slice(0));
       setPdfDoc(newDoc);
       setPdfPages([]);
       setPageViewports([]);
       canvasRefs.current = {};
       pageContainerRefs.current = {};
-      
+
       // Keep current page (unless it is now out of bounds)
       const keepPage = pendingViewerScrollRestoreRef.current?.pageNum ?? (currentPageRef.current || currentPage);
       const nextPage = Math.min(Math.max(1, keepPage), newDoc.numPages);
@@ -3291,7 +4254,7 @@ export default function App() {
       }
 
       // Ladda PDF med pdf-lib
-      const pdfLibDoc = await PDFDocument.load(pdfDataCopy, { 
+      const pdfLibDoc = await PDFDocument.load(pdfDataCopy, {
         ignoreEncryption: true,
         updateMetadata: false,
         parseSpeed: 0
@@ -3299,7 +4262,7 @@ export default function App() {
 
       // Sortera sidnummer i fallande ordning för att ta bort från slutet
       const sortedPages = [...pageNumbers].sort((a, b) => b - a);
-      
+
       // Ta bort sidor (pageNumbers är 1-indexerade, pdf-lib använder 0-indexerade)
       for (const pageNum of sortedPages) {
         const pageIndex = pageNum - 1;
@@ -3310,7 +4273,7 @@ export default function App() {
 
       // Ta bort element på borttagna sidor
       const pagesToDelete = new Set(sortedPages.map(p => p - 1)); // Konvertera till 0-indexerade
-      
+
       const newTextBoxes = textBoxes.filter(tb => {
         const pageIndex = tb.pageIndex !== undefined ? tb.pageIndex : 0;
         return !pagesToDelete.has(pageIndex);
@@ -3416,7 +4379,7 @@ export default function App() {
       // Ladda om med PDF.js
       const loadingTask = pdfjsLib.getDocument({ data: pdfJsBytes });
       const newDoc = await loadingTask.promise;
-      
+
       setPdfData(stateBytes.buffer.slice(0));
       setPdfDoc(newDoc);
       setPdfPages([]);
@@ -3429,7 +4392,7 @@ export default function App() {
       setShapeBoxes(newShapeBoxes);
       setCommentBoxes(newCommentBoxes);
       setHighlightStrokes(newHighlightStrokes);
-      
+
       // Uppdatera currentPage
       const maxPage = Math.max(1, newDoc.numPages);
       if (currentPage > maxPage || sortedPages.includes(currentPage)) {
@@ -3693,9 +4656,155 @@ export default function App() {
     }
   };
 
+  const handleBatchPageUpdate = async (newPagesStructure, externalDocs) => {
+    // newPagesStructure: [{ id, originalIndex: number|null, rotation: number, isDeleted: boolean, docId: string }]
+    // externalDocs: Map<docId, { pdfJsDoc, arrayBuffer }>
+    if (!pdfDoc || !pdfData) return;
+
+    setIsLoading(true);
+    setLoadingMessage(t('loading.updatingPages', 'Uppdaterar sidor...'));
+
+    try {
+      const keptPages = newPagesStructure.filter(p => !p.isDeleted);
+
+      if (keptPages.length === 0) {
+        error(t('errors.cannotDeleteAllPages', 'Kan inte ta bort alla sidor'));
+        setIsLoading(false);
+        return;
+      }
+
+      const newPdf = await PDFDocument.create();
+
+      // Cache loaded PDFDocuments to avoid reloading multiple times
+      // Key: docId ('main' or uuid), Value: PDFDocument
+      const loadedDocsCache = new Map();
+
+      // Load main doc
+      let mainPdfDataCopy;
+      try {
+        const uint8Array = new Uint8Array(pdfData);
+        mainPdfDataCopy = uint8Array.slice().buffer;
+      } catch (error) {
+        console.warn('PDF data detached', error);
+        // Fallback handled? Assuming main doc is mostly fine or we re-export if needed
+        // If we really need to re-export, we should do it here.
+        const exportedBytes = await exportPDF(pdfData, textBoxes, whiteoutBoxes, patchBoxes, shapeBoxes, highlightStrokes);
+        mainPdfDataCopy = exportedBytes.buffer.slice(0);
+      }
+
+      const mainSrcDoc = await PDFDocument.load(mainPdfDataCopy, { ignoreEncryption: true });
+      loadedDocsCache.set('main', mainSrcDoc);
+
+      // Build new PDF page by page
+      const newAnnotations = {
+        textBoxes: [],
+        whiteoutBoxes: [],
+        patchBoxes: [],
+        shapeBoxes: [],
+        commentBoxes: [],
+        highlightStrokes: []
+      };
+
+      for (let newIndex = 0; newIndex < keptPages.length; newIndex++) {
+        const pageInfo = keptPages[newIndex];
+        const docId = pageInfo.docId || 'main'; // default to main
+
+        if (pageInfo.originalIndex !== null) {
+          // Existing page from some doc
+
+          // Ensure source doc is loaded
+          if (!loadedDocsCache.has(docId)) {
+            if (externalDocs && externalDocs.has(docId)) {
+              const extDocData = externalDocs.get(docId).arrayBuffer;
+              const extSrcDoc = await PDFDocument.load(extDocData, { ignoreEncryption: true });
+              loadedDocsCache.set(docId, extSrcDoc);
+            } else {
+              console.error(`Missing external doc ${docId}`);
+              continue; // Skip if missing
+            }
+          }
+
+          const sourceDoc = loadedDocsCache.get(docId);
+
+          // Copy page
+          const [copiedPage] = await newPdf.copyPages(sourceDoc, [pageInfo.originalIndex]);
+
+          // Apply rotation
+          const currentRotation = copiedPage.getRotation().angle;
+          copiedPage.setRotation(degrees(currentRotation + pageInfo.rotation));
+
+          newPdf.addPage(copiedPage);
+
+          // Copy Annotations ONLY IF from MAIN doc 
+          // (Merging annotations from external docs is complex as we don't have their annotation state in our app structure yet)
+          if (docId === 'main') {
+            const cloneAndMap = (arr, type) => {
+              arr.filter(item => item.pageIndex === pageInfo.originalIndex).forEach(item => {
+                const clone = JSON.parse(JSON.stringify(item));
+                clone.pageIndex = newIndex;
+                if (type === 'textBoxes') clone.id = Date.now() + Math.random();
+                newAnnotations[type].push(clone);
+              });
+            };
+
+            cloneAndMap(textBoxes, 'textBoxes');
+            cloneAndMap(whiteoutBoxes, 'whiteoutBoxes');
+            cloneAndMap(patchBoxes, 'patchBoxes');
+            cloneAndMap(shapeBoxes, 'shapeBoxes');
+            cloneAndMap(commentBoxes, 'commentBoxes');
+            cloneAndMap(highlightStrokes, 'highlightStrokes');
+          }
+
+        } else {
+          // New Blank Page
+          // Inherit size from first page of main doc
+          const { width, height } = mainSrcDoc.getPage(0).getSize();
+          newPdf.addPage([width, height]);
+        }
+      }
+
+      const modifiedPdfBytes = await newPdf.save();
+      const stateBytes = new Uint8Array(modifiedPdfBytes);
+      const pdfJsBytes = new Uint8Array(modifiedPdfBytes);
+
+      const loadingTask = pdfjsLib.getDocument({ data: pdfJsBytes });
+      const newDoc = await loadingTask.promise;
+
+      setPdfData(stateBytes.buffer.slice(0));
+      setPdfDoc(newDoc);
+      setPdfPages([]);
+      setPageViewports([]);
+      canvasRefs.current = {};
+      pageContainerRefs.current = {};
+
+      // Update annotation state
+      setTextBoxes(newAnnotations.textBoxes);
+      setWhiteoutBoxes(newAnnotations.whiteoutBoxes);
+      setPatchBoxes(newAnnotations.patchBoxes);
+      setShapeBoxes(newAnnotations.shapeBoxes);
+      setCommentBoxes(newAnnotations.commentBoxes);
+      setHighlightStrokes(newAnnotations.highlightStrokes);
+
+      // Reset selection/view to first page
+      setCurrentPage(1);
+      currentPageRef.current = 1;
+
+      saveToHistory(newAnnotations.textBoxes, newAnnotations.whiteoutBoxes, newAnnotations.patchBoxes, newAnnotations.shapeBoxes, newAnnotations.commentBoxes, newAnnotations.highlightStrokes);
+      success(t('success.pagesUpdated', 'Sidhantering sparad'));
+
+      setShowPageManagementPanel(false); // Close panel
+
+    } catch (err) {
+      console.error('Fel vid batch-uppdatering av sidor:', err);
+      error(t('errors.updatePagesFailed', 'Kunde inte uppdatera sidor') + ': ' + err.message);
+    } finally {
+      setIsLoading(false);
+      setLoadingMessage('');
+    }
+  };
+
   // Lägg till sidor
   const handleAddPage = async (type, file = null) => {
-    if (!pdfDoc || !pdfData) return;
 
     setIsLoading(true);
     setLoadingMessage(t('loading.addingPage', 'Lägger till sida...'));
@@ -3714,7 +4823,7 @@ export default function App() {
       }
 
       // Ladda PDF med pdf-lib
-      const pdfLibDoc = await PDFDocument.load(pdfDataCopy, { 
+      const pdfLibDoc = await PDFDocument.load(pdfDataCopy, {
         ignoreEncryption: true,
         updateMetadata: false,
         parseSpeed: 0
@@ -3728,12 +4837,12 @@ export default function App() {
       } else if (type === 'fromFile' && file) {
         // Lägg till sidor från en annan PDF-fil
         const fileData = await loadPDF(file);
-        const sourcePdf = await PDFDocument.load(fileData, { 
+        const sourcePdf = await PDFDocument.load(fileData, {
           ignoreEncryption: true,
           updateMetadata: false,
           parseSpeed: 0
         });
-        
+
         const sourcePages = await pdfLibDoc.copyPages(sourcePdf, sourcePdf.getPageIndices());
         sourcePages.forEach((page) => {
           pdfLibDoc.addPage(page);
@@ -3748,7 +4857,7 @@ export default function App() {
       // Ladda om med PDF.js
       const loadingTask = pdfjsLib.getDocument({ data: pdfJsBytes });
       const newDoc = await loadingTask.promise;
-      
+
       setPdfData(stateBytes.buffer.slice(0));
       setPdfDoc(newDoc);
       setPdfPages([]);
@@ -3774,7 +4883,7 @@ export default function App() {
 
     setIsLoading(true);
     setLoadingMessage(t('loading.exporting', 'Exporterar PDF...'));
-    
+
     try {
       const exported = await exportPDF(pdfData, textBoxes, whiteoutBoxes, patchBoxes, shapeBoxes, highlightStrokes);
       const blob = new Blob([exported], { type: 'application/pdf' });
@@ -3804,10 +4913,10 @@ export default function App() {
 
     setIsLoading(true);
     setLoadingMessage(t('loading.exporting', 'Exporterar fil...'));
-    
+
     try {
       let result;
-      
+
       switch (format) {
         case 'pdf':
           result = await exportAsPDF(pdfData, textBoxes, whiteoutBoxes, patchBoxes, shapeBoxes, highlightStrokes);
@@ -3824,10 +4933,10 @@ export default function App() {
         case 'png':
         case 'jpg':
           setLoadingMessage(t('loading.exportingImages', 'Exporterar bilder...'));
-          const imageExport = format === 'png' 
+          const imageExport = format === 'png'
             ? await exportAsPNG(pdfDoc, textBoxes, whiteoutBoxes, patchBoxes)
             : await exportAsJPG(pdfDoc, textBoxes, whiteoutBoxes, patchBoxes);
-          
+
           for (const { dataUrl, pageNum } of imageExport.pages) {
             const link = document.createElement('a');
             link.href = dataUrl;
@@ -3889,933 +4998,827 @@ export default function App() {
   };
 
 
+  // --- Crop Logic ---
+  const handleCropChange = (rect, pageIndex) => {
+    setCropRegion(rect);
+    setActiveCropPage(pageIndex);
+  };
+
+  const handleCropComplete = (rect, pageIndex) => {
+    setCropRegion(rect);
+    setActiveCropPage(pageIndex);
+    setShowCropConfirmModal(true);
+  };
+
+  const handleConfirmCrop = async (scope) => { // scope: 'current' | 'all'
+    if (!pdfDoc || !cropRegion || activeCropPage === null) return;
+
+    try {
+      setIsLoading(true);
+      setLoadingMessage(t('crop.processing', 'Beskär...'));
+
+      if (!pdfData) {
+        console.error("No PDF data available to crop");
+        setIsLoading(false);
+        return;
+      }
+
+      const pdfLibDoc = await PDFDocument.load(pdfData);
+      const allPages = pdfLibDoc.getPages();
+
+      const scale = zoom;
+      const pageIndex = activeCropPage;
+      const pdfLibPage = allPages[pageIndex];
+      const { width: pageWidth, height: pageHeight } = pdfLibPage.getSize();
+
+      const x = cropRegion.x / scale;
+      const w = cropRegion.width / scale;
+      const h = cropRegion.height / scale;
+      // PDF coordinates are from bottom-left
+      const y = pageHeight - ((cropRegion.y + cropRegion.height) / scale);
+
+      const newCropBox = {
+        x: Math.max(0, x),
+        y: Math.max(0, y),
+        width: w,
+        height: h
+      };
+
+      if (scope === 'all') {
+        // Apply same relative crop to all pages? 
+        // Or strictly same crop box? Pages might differ in size.
+        // Let's assume same absolute crop box for now or relative to page size? 
+        // Most users expect "Crop All" to apply the same visual crop.
+        // If pages effectively same size, usage is fine.
+        allPages.forEach(p => p.setCropBox(newCropBox.x, newCropBox.y, newCropBox.width, newCropBox.height));
+      } else {
+        pdfLibPage.setCropBox(newCropBox.x, newCropBox.y, newCropBox.width, newCropBox.height);
+      }
+
+      const newPdfBytes = await pdfLibDoc.save();
+      setPdfData(newPdfBytes);
+
+      // Reload the doc
+      const loadedPdf = await pdfjsLib.getDocument({ data: newPdfBytes }).promise;
+
+      setPdfDoc(loadedPdf);
+
+      // Reset tools
+      setCropRegion(null);
+      setActiveCropPage(null);
+      setShowCropConfirmModal(false);
+      setTool(null);
+
+      setIsLoading(false);
+      success(t('crop.success', 'PDF beskuren'));
+
+    } catch (e) {
+      console.error('Crop failed', e);
+      setIsLoading(false);
+      error(t('crop.error', 'Kunde inte beskära PDF'));
+    }
+  };
+
+  const handleCancelCrop = () => {
+    setShowCropConfirmModal(false);
+    setCropRegion(null);
+    // Keep tool active? Or close?
+    // Usually close modal allows resume.
+  };
+
+
   // Visa landing page om ingen PDF är laddad
   if (!pdfDoc) {
-    return <LandingPage onFileSelect={handleFileSelect} onCreateNew={handleCreateNewPdf} />;
+    return (
+      <>
+        <LandingPage
+          onFileSelect={handleFileSelect}
+          onCreateNew={handleCreateNewPdf}
+          onOpenTool={(toolKey) => {
+            if (toolKey === 'pricing') {
+              setShowPricingModal(true);
+            } else {
+              openTool(toolKey);
+            }
+          }}
+          enabledTools={implementedLandingTools}
+        />
+        <PricingModal
+          isOpen={showPricingModal}
+          onClose={() => setShowPricingModal(false)}
+        />
+        <PdfToolRunnerModal
+          isOpen={toolRunner.isOpen}
+          toolKey={toolRunner.toolKey}
+          initialFiles={toolRunner.initialFiles}
+          onClose={closeTool}
+          onStartTranslation={handleOpenTranslateView}
+        />
+        {/* Translate View - must be here for landing page */}
+        {translateView.isOpen && (
+          <TranslatePdfView
+            pdfBuffer={translateView.pdfBuffer || new Uint8Array(0)}
+            fileName={translateView.fileName || 'document.pdf'}
+            targetLang={translateView.targetLang || 'sv'}
+            onClose={closeTranslateView}
+          />
+        )}
+      </>
+    );
   }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', position: 'relative' }}>
-      {/* Toolbar - Går hela vägen från vänster till höger */}
+      {/* Header Row with Logo and Filename */}
       <div style={{
-        padding: '10px',
-        backgroundColor: '#1a1a1a',
-        borderBottom: '2px solid #ff6b35',
         display: 'flex',
-        gap: '10px',
         alignItems: 'center',
-        flexWrap: 'wrap',
-        zIndex: 20,
-        position: 'relative'
+        padding: '8px 16px',
+        backgroundColor: 'var(--bg-secondary)',
+        borderBottom: '1px solid var(--border-color)',
+        gap: '16px',
+        zIndex: 200
       }}>
-        <button
-          onClick={() => {
-            setPdfDoc(null);
-            setPdfData(null);
-            setTextBoxes([]);
-            setWhiteoutBoxes([]);
-            setPatchBoxes([]);
-            setShapeBoxes([]);
-            setHistory([]);
-            setHistoryIndex(-1);
-          }}
-          style={{
-            padding: '8px 16px',
-            backgroundColor: '#333',
-            color: '#fff',
-            border: '1px solid #555',
-            cursor: 'pointer',
-            borderRadius: '5px',
-            marginRight: '10px',
-            transition: 'all 0.2s ease'
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.backgroundColor = '#444';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.backgroundColor = '#333';
-          }}
-        >
-          ← {t('toolbar.newPdf')}
-        </button>
-        
-        <button
-          onClick={() => {
-            // Växla verktyget av/on
-            if (tool === 'text') {
-              setTool(null);
-            } else {
-              setTool('text');
-            }
-          }}
-          style={{
-            padding: '8px 16px',
-            backgroundColor: tool === 'text' ? '#ff6b35' : '#333',
-            color: '#fff',
-            border: tool === 'text' ? '1px solid #ff6b35' : '1px solid #555',
-            cursor: 'pointer',
-            borderRadius: '5px',
-            transition: 'all 0.2s ease'
-          }}
-          onMouseEnter={(e) => {
-            if (tool !== 'text') {
-              e.currentTarget.style.backgroundColor = '#444';
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (tool !== 'text') {
-              e.currentTarget.style.backgroundColor = '#333';
-            }
-          }}
-        >
-          {t('toolbar.addText')}
-        </button>
-        
-        <button
-          onClick={() => {
-            if (tool === 'edit-text') {
-              setTool(null);
-              setHoveredTextBoxIndex(null);
-            } else {
-              setTool('edit-text');
-              setSelectedElement(null);
-              setSelectedType(null);
-            }
-          }}
-          style={{
-            padding: '8px 16px',
-            backgroundColor: tool === 'edit-text' ? '#ff6b35' : '#333',
-            color: '#fff',
-            border: tool === 'edit-text' ? '1px solid #ff6b35' : '1px solid #555',
-            cursor: 'pointer',
-            borderRadius: '5px',
-            transition: 'all 0.2s ease'
-          }}
-          onMouseEnter={(e) => {
-            if (tool !== 'edit-text') {
-              e.currentTarget.style.backgroundColor = '#444';
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (tool !== 'edit-text') {
-              e.currentTarget.style.backgroundColor = '#333';
-            }
-          }}
-        >
-          {t('toolbar.editText', 'Redigera text')}
-        </button>
-        
-        <button
-          onClick={() => {
-            // Växla verktyget av/on
-            if (tool === 'whiteout') {
-              setTool(null);
-              // Avmarkera whiteout-rutor när verktyget stängs av
-              if (selectedType === 'whiteout') {
-                setSelectedElement(null);
-                setSelectedType(null);
-              }
-            } else {
-              setTool('whiteout');
-            }
-          }}
-          style={{
-            padding: '8px 16px',
-            backgroundColor: tool === 'whiteout' ? '#ff6b35' : '#333',
-            color: '#fff',
-            border: tool === 'whiteout' ? '1px solid #ff6b35' : '1px solid #555',
-            cursor: 'pointer',
-            borderRadius: '5px',
-            transition: 'all 0.2s ease'
-          }}
-          onMouseEnter={(e) => {
-            if (tool !== 'whiteout') {
-              e.currentTarget.style.backgroundColor = '#444';
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (tool !== 'whiteout') {
-              e.currentTarget.style.backgroundColor = '#333';
-            }
-          }}
-        >
-          {t('toolbar.whiteout')}
-        </button>
-        
-        <button
-          onClick={() => {
-            // Växla verktyget av/on
-            if (tool === 'comment') {
-              setTool(null);
-              // Avmarkera kommentarer när verktyget stängs av
-              if (selectedType === 'comment') {
-                setSelectedElement(null);
-                setSelectedType(null);
-              }
-            } else {
-              setTool('comment');
-            }
-          }}
-          style={{
-            padding: '8px 16px',
-            backgroundColor: tool === 'comment' ? '#ff6b35' : '#333',
-            color: '#fff',
-            border: tool === 'comment' ? '1px solid #ff6b35' : '1px solid #555',
-            cursor: 'pointer',
-            borderRadius: '5px',
-            transition: 'all 0.2s ease'
-          }}
-          onMouseEnter={(e) => {
-            if (tool !== 'comment') {
-              e.currentTarget.style.backgroundColor = '#444';
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (tool !== 'comment') {
-              e.currentTarget.style.backgroundColor = '#333';
-            }
-          }}
-        >
-          {t('toolbar.comment', 'Kommentar')}
-        </button>
-        
-        <button
-          onClick={() => {
-            // Växla verktyget av/on
-            if (tool === 'patch') {
-              setTool(null);
-              setPatchMode('select');
-              setSourceRect(null);
-              setSourcePageIndex(null);
-              // Avmarkera patch-rutor när verktyget stängs av
-              if (selectedType === 'patch') {
-                setSelectedElement(null);
-                setSelectedType(null);
-              }
-            } else {
-              setTool('patch');
-              setPatchMode('select');
-              setSourceRect(null);
-              setSourcePageIndex(null);
-            }
-          }}
-          style={{
-            padding: '8px 16px',
-            backgroundColor: tool === 'patch' ? '#ff6b35' : '#333',
-            color: '#fff',
-            border: tool === 'patch' ? '1px solid #ff6b35' : '1px solid #555',
-            cursor: 'pointer',
-            borderRadius: '5px',
-            transition: 'all 0.2s ease'
-          }}
-          onMouseEnter={(e) => {
-            if (tool !== 'patch') {
-              e.currentTarget.style.backgroundColor = '#444';
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (tool !== 'patch') {
-              e.currentTarget.style.backgroundColor = '#333';
-            }
-          }}
-        >
-          {t('toolbar.copyArea')} {patchMode === 'select' ? t('toolbar.selectArea') : t('toolbar.place')}
-        </button>
+        {/* Logo */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          cursor: 'pointer'
+        }} onClick={() => {
+          // Check for unsaved changes (history contains past states)
+          if (history.length > 0) {
+            const confirmed = window.confirm(t('warnings.unsavedChanges', 'Du har osparade ändringar. Är du säker på att du vill lämna och kasta ändringarna?'));
+            if (!confirmed) return;
+          }
 
-        <button
-          onClick={() => {
-            // Växla verktyget av/on
-            if (tool === 'image') {
-              setTool(null);
-              setPendingImageData(null);
-              return;
-            }
-            handleSelectImageFile();
-          }}
-          style={{
-            padding: '8px 16px',
-            backgroundColor: tool === 'image' ? '#ff6b35' : '#333',
-            color: '#fff',
-            border: tool === 'image' ? '1px solid #ff6b35' : '1px solid #555',
-            cursor: 'pointer',
-            borderRadius: '5px',
-            transition: 'all 0.2s ease'
-          }}
-          onMouseEnter={(e) => {
-            if (tool !== 'image') {
-              e.currentTarget.style.backgroundColor = '#444';
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (tool !== 'image') {
-              e.currentTarget.style.backgroundColor = '#333';
-            }
-          }}
-          title={pendingImageData ? t('toolbar.imageReady', 'Dra för att placera bilden') : t('toolbar.imageHint', 'Välj en bild (PNG/JPG) och placera på sidan')}
-        >
-          {t('toolbar.image', 'Bild')}
-        </button>
-
-        {/* Highlight verktyg */}
-        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-          <button
-            onClick={() => {
-              const next = tool === 'highlight' ? null : 'highlight';
-              setTool(next);
-              if (next) setHighlightMode('rect');
-            }}
-            style={{
-              padding: '8px 12px',
-              backgroundColor: tool === 'highlight' ? '#ff6b35' : '#333',
-              color: '#fff',
-              border: tool === 'highlight' ? '1px solid #ff6b35' : '1px solid #555',
-              cursor: 'pointer',
-              borderRadius: '5px',
-              transition: 'all 0.2s ease'
-            }}
-          >
-            {t('toolbar.highlightRect', 'Highlight')}
-          </button>
-          {/* Övriga highlight-inställningar flyttas till highlight-sidebar */}
+          setPdfDoc(null);
+          setPdfData(null);
+          setTextBoxes([]);
+          setWhiteoutBoxes([]);
+          setPatchBoxes([]);
+          setShapeBoxes([]);
+          setHistory([]);
+          setHistoryIndex(-1);
+        }}>
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="24" height="24" rx="4" fill="#ff6b35" />
+            <path d="M6 7h8l4 4v8a1 1 0 01-1 1H7a1 1 0 01-1-1V7z" fill="#fff" />
+            <path d="M14 7v4h4" fill="none" stroke="#ff6b35" strokeWidth="1.5" />
+            <text x="8" y="16" fontSize="5" fontWeight="bold" fill="#ff6b35">PDF</text>
+          </svg>
+          <span style={{
+            fontSize: '18px',
+            fontWeight: '700',
+            color: 'var(--text-primary)',
+            letterSpacing: '-0.5px'
+          }}>
+            PDF<span style={{ color: '#ff6b35' }}>Moment</span>
+          </span>
         </div>
 
-        {/* Shape Tools - Dropdown */}
-        <div style={{ position: 'relative', display: 'inline-block' }} data-shape-type-dropdown>
-          <button
-            onClick={() => {
-              const isShapeTool = tool && tool.startsWith('shape');
-              if (isShapeTool) {
-                // Växla dropdown om shape-verktyget redan är aktivt
-                setShowShapeTypeDropdown(!showShapeTypeDropdown);
-              } else {
-                // Aktivera shape-verktyget och visa dropdown
-                setTool(`shape-${shapeSettings.type}`);
-                setShowShapeTypeDropdown(true);
-              }
-            }}
+        {/* Editable Filename */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          backgroundColor: 'var(--bg-card)',
+          border: '1px solid var(--border-color)',
+          borderRadius: '6px',
+          padding: '4px 12px',
+          minWidth: '200px',
+          maxWidth: '400px'
+        }}>
+          <input
+            type="text"
+            value={pdfFileName}
+            onChange={(e) => setPdfFileName(e.target.value)}
             style={{
-              padding: '8px 16px',
-              backgroundColor: tool && tool.startsWith('shape') ? '#ff6b35' : '#333',
-              color: '#fff',
-              border: tool && tool.startsWith('shape') ? '1px solid #ff6b35' : '1px solid #555',
-              cursor: 'pointer',
-              borderRadius: '5px',
-              transition: 'all 0.2s ease',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px'
-            }}
-            onMouseEnter={(e) => {
-              if (!(tool && tool.startsWith('shape'))) {
-                e.currentTarget.style.backgroundColor = '#444';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!(tool && tool.startsWith('shape'))) {
-                e.currentTarget.style.backgroundColor = '#333';
-              }
-            }}
-          >
-            {t('toolbar.shapes')}
-            {tool && tool.startsWith('shape') && (
-              <span style={{ fontSize: '0.8rem', opacity: 0.8 }}>
-                ({t(`toolbar.${shapeSettings.type}`)})
-              </span>
-            )}
-          </button>
-          
-          {/* Shape Type Dropdown - Visas när showShapeTypeDropdown är true */}
-          {tool && tool.startsWith('shape') && showShapeTypeDropdown && (
-            <div
-              style={{
-                position: 'absolute',
-                top: '100%',
-                left: 0,
-                marginTop: '5px',
-                backgroundColor: '#2a2a2a',
-                border: '1px solid #555',
-                borderRadius: '5px',
-                padding: '5px',
-                zIndex: 1000,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '2px',
-                minWidth: '150px'
-              }}
-            >
-              {['rectangle', 'circle', 'line', 'arrow'].map((shapeType) => (
-                <button
-                  key={shapeType}
-                  onClick={() => {
-                    setShapeSettings({ ...shapeSettings, type: shapeType });
-                    setTool(`shape-${shapeType}`);
-                    setShowShapeTypeDropdown(false); // Stäng dropdown när man väljer en form-typ
-                  }}
-                  style={{
-                    padding: '8px 12px',
-                    backgroundColor: shapeSettings.type === shapeType ? '#ff6b35' : '#333',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: '3px',
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                    fontSize: '0.9rem',
-                    transition: 'all 0.2s ease'
-                  }}
-                  onMouseEnter={(e) => {
-                    if (shapeSettings.type !== shapeType) {
-                      e.currentTarget.style.backgroundColor = '#444';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (shapeSettings.type !== shapeType) {
-                      e.currentTarget.style.backgroundColor = '#333';
-                    }
-                  }}
-                >
-                  {t(`toolbar.${shapeType}`)}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <button
-          onClick={() => {
-            // Växla pan-verktyget av/on
-            if (tool === 'pan') {
-              setTool(null);
-            } else {
-              setTool('pan');
-            }
-          }}
-          style={{
-            padding: '8px 16px',
-            backgroundColor: tool === 'pan' ? '#ff6b35' : '#333',
-            color: '#fff',
-            border: tool === 'pan' ? '1px solid #ff6b35' : '1px solid #555',
-            cursor: 'pointer',
-            borderRadius: '5px',
-            transition: 'all 0.2s ease'
-          }}
-          onMouseEnter={(e) => {
-            if (tool !== 'pan') {
-              e.currentTarget.style.backgroundColor = '#444';
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (tool !== 'pan') {
-              e.currentTarget.style.backgroundColor = '#333';
-            }
-          }}
-        >
-          {t('toolbar.pan')}
-        </button>
-
-        {/* Eraser tool */}
-        <button
-          onClick={() => {
-            if (tool === 'eraser') {
-              setTool(null);
-            } else {
-              setTool('eraser');
-            }
-          }}
-          style={{
-            padding: '8px 16px',
-            backgroundColor: tool === 'eraser' ? '#ff6b35' : '#333',
-            color: '#fff',
-            border: tool === 'eraser' ? '1px solid #ff6b35' : '1px solid #555',
-            cursor: 'pointer',
-            borderRadius: '5px',
-            transition: 'all 0.2s ease'
-          }}
-          onMouseEnter={(e) => {
-            if (tool !== 'eraser') {
-              e.currentTarget.style.backgroundColor = '#444';
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (tool !== 'eraser') {
-              e.currentTarget.style.backgroundColor = '#333';
-            }
-          }}
-        >
-          {t('toolbar.eraser', 'Eraser')}
-        </button>
-
-        {selectedElement !== null && (
-          <button
-            onClick={handleDelete}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: '#ff4444',
-              color: '#fff',
               border: 'none',
-              cursor: 'pointer',
-              borderRadius: '5px',
-              transition: 'all 0.2s ease'
+              outline: 'none',
+              fontSize: '14px',
+              fontWeight: '500',
+              color: 'var(--text-primary)',
+              width: '100%',
+              backgroundColor: 'transparent'
             }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = '#ff6666';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = '#ff4444';
-            }}
-          >
-            {t('toolbar.delete')}
-          </button>
-        )}
-
-        {/* Undo/Redo knappar */}
-        <div style={{ marginLeft: '10px', display: 'flex', gap: '5px' }}>
-          <button
-            onClick={handleUndo}
-            disabled={historyIndex <= 0}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: historyIndex <= 0 ? '#333' : '#444',
-              color: '#fff',
-              border: '1px solid #555',
-              cursor: historyIndex <= 0 ? 'not-allowed' : 'pointer',
-              opacity: historyIndex <= 0 ? 0.5 : 1,
-              borderRadius: '5px',
-              transition: 'all 0.2s ease'
-            }}
-            title={t('tooltips.undo')}
-            onMouseEnter={(e) => {
-              if (historyIndex > 0) {
-                e.currentTarget.style.backgroundColor = '#555';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (historyIndex > 0) {
-                e.currentTarget.style.backgroundColor = '#444';
-              }
-            }}
-          >
-            ↶ {t('toolbar.undo')}
-          </button>
-          <button
-            onClick={handleRedo}
-            disabled={historyIndex >= history.length - 1}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: historyIndex >= history.length - 1 ? '#333' : '#444',
-              color: '#fff',
-              border: '1px solid #555',
-              cursor: historyIndex >= history.length - 1 ? 'not-allowed' : 'pointer',
-              opacity: historyIndex >= history.length - 1 ? 0.5 : 1,
-              borderRadius: '5px',
-              transition: 'all 0.2s ease'
-            }}
-            title={t('tooltips.redo')}
-            onMouseEnter={(e) => {
-              if (historyIndex < history.length - 1) {
-                e.currentTarget.style.backgroundColor = '#555';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (historyIndex < history.length - 1) {
-                e.currentTarget.style.backgroundColor = '#444';
-              }
-            }}
-          >
-            ↷ {t('toolbar.redo')}
-          </button>
+            placeholder="Untitled"
+          />
+          <span style={{ color: 'var(--text-secondary)', fontSize: '14px', marginLeft: '4px' }}>.pdf</span>
         </div>
 
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: '10px', alignItems: 'center', color: '#fff' }}>
-          {/* Page layout dropdown */}
-          {pdfDoc && (
-            <div ref={pageLayoutMenuRef} style={{ position: 'relative' }}>
-              <button
-                onClick={() => setShowPageLayoutMenu(v => !v)}
-                style={{
-                  padding: '8px 16px',
-                  backgroundColor: showPageLayoutMenu ? '#5a6268' : '#6c757d',
-                  color: '#fff',
-                  border: 'none',
-                  cursor: 'pointer',
-                  borderRadius: '5px',
-                  fontWeight: '600',
-                  transition: 'all 0.2s ease'
-                }}
-                onMouseEnter={(e) => {
-                  if (!showPageLayoutMenu) {
-                    e.currentTarget.style.backgroundColor = '#5a6268';
-                    e.currentTarget.style.transform = 'translateY(-2px)';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!showPageLayoutMenu) {
-                    e.currentTarget.style.backgroundColor = '#6c757d';
-                    e.currentTarget.style.transform = 'translateY(0)';
-                  }
-                }}
-                title={t('toolbar.pageLayout', 'Sidlayout')}
-              >
-                {t('toolbar.pageLayout', 'Sidlayout')}
-              </button>
+        {/* Spacer */}
+        <div style={{ flex: 1 }} />
 
-              {showPageLayoutMenu && (
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: '44px',
-                    right: 0,
-                    width: '320px',
-                    backgroundColor: '#ffffff',
-                    borderRadius: '10px',
-                    boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
-                    overflow: 'hidden',
-                    zIndex: 2000
-                  }}
-                >
-                  <div style={{ padding: '14px 14px 10px 14px', borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
-                    <div style={{ fontSize: '13px', fontWeight: 700, color: '#333' }}>
-                      {t('toolbar.pageLayout', 'Sidlayout')}
-                    </div>
-                  </div>
-
-                  {/* Page Mode */}
-                  <div style={{ padding: '12px 14px', borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
-                    <div style={{ fontSize: '12px', fontWeight: 700, color: '#666', marginBottom: '10px' }}>
-                      {t('toolbar.pageMode', 'Sidläge')}
-                    </div>
-                    <div style={{ display: 'flex', gap: '10px' }}>
-                      <button
-                        onClick={() => setPageLayoutMode('single')}
-                        style={{
-                          flex: 1,
-                          padding: '10px 10px',
-                          borderRadius: '8px',
-                          border: pageLayoutMode === 'single' ? '2px solid #0066ff' : '1px solid #ddd',
-                          backgroundColor: pageLayoutMode === 'single' ? 'rgba(0,102,255,0.08)' : '#fff',
-                          cursor: 'pointer'
-                        }}
-                        title={t('toolbar.layoutSingle', 'En sida')}
-                      >
-                        <div style={{ width: '34px', height: '26px', margin: '0 auto 8px auto', borderRadius: '4px', border: '2px solid #2a2a2a' }} />
-                        <div style={{ fontSize: '12px', fontWeight: 700, color: '#333' }}>{t('toolbar.layoutSingle', 'En sida')}</div>
-                      </button>
-
-                      <button
-                        onClick={() => setPageLayoutMode('double')}
-                        style={{
-                          flex: 1,
-                          padding: '10px 10px',
-                          borderRadius: '8px',
-                          border: pageLayoutMode === 'double' ? '2px solid #0066ff' : '1px solid #ddd',
-                          backgroundColor: pageLayoutMode === 'double' ? 'rgba(0,102,255,0.08)' : '#fff',
-                          cursor: 'pointer'
-                        }}
-                        title={t('toolbar.layoutDouble', 'Två sidor')}
-                      >
-                        <div style={{ display: 'flex', gap: '6px', width: '74px', margin: '0 auto 8px auto' }}>
-                          <div style={{ flex: 1, height: '26px', borderRadius: '4px', border: '2px solid #2a2a2a' }} />
-                          <div style={{ flex: 1, height: '26px', borderRadius: '4px', border: '2px solid #2a2a2a' }} />
-                        </div>
-                        <div style={{ fontSize: '12px', fontWeight: 700, color: '#333' }}>{t('toolbar.layoutDouble', 'Två sidor')}</div>
-                      </button>
-
-                      <button
-                        onClick={() => setPageLayoutMode('auto')}
-                        style={{
-                          flex: 1,
-                          padding: '10px 10px',
-                          borderRadius: '8px',
-                          border: pageLayoutMode === 'auto' ? '2px solid #0066ff' : '1px solid #ddd',
-                          backgroundColor: pageLayoutMode === 'auto' ? 'rgba(0,102,255,0.08)' : '#fff',
-                          cursor: 'pointer'
-                        }}
-                        title={t('toolbar.layoutAuto', 'Auto')}
-                      >
-                        <div style={{ width: '34px', height: '26px', margin: '0 auto 8px auto', borderRadius: '4px', border: '2px dashed #2a2a2a' }} />
-                        <div style={{ fontSize: '12px', fontWeight: 700, color: '#333' }}>{t('toolbar.layoutAuto', 'Auto')}</div>
-                      </button>
-                    </div>
-
-                    {pageLayoutMode === 'auto' && (
-                      <div style={{ marginTop: '10px', fontSize: '11px', color: '#666' }}>
-                        {t('toolbar.layoutAutoHint', 'Auto växlar mellan en/två sidor beroende på bredd.')}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Page Transition */}
-                  <div style={{ padding: '12px 14px', borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
-                    <div style={{ fontSize: '12px', fontWeight: 700, color: '#666', marginBottom: '10px' }}>
-                      {t('toolbar.pageTransition', 'Sidövergång')}
-                    </div>
-                    <div style={{ display: 'flex', gap: '10px' }}>
-                      <button
-                        onClick={() => setNavMode('scroll')}
-                        style={{
-                          flex: 1,
-                          padding: '10px 12px',
-                          borderRadius: '8px',
-                          border: navMode === 'scroll' ? '2px solid #0066ff' : '1px solid #ddd',
-                          backgroundColor: navMode === 'scroll' ? 'rgba(0,102,255,0.08)' : '#fff',
-                          cursor: 'pointer',
-                          fontWeight: 700,
-                          fontSize: '12px',
-                          color: '#333'
-                        }}
-                      >
-                        {t('toolbar.navScroll', 'Scroll')}
-                      </button>
-                      <button
-                        onClick={() => setNavMode('paged')}
-                        style={{
-                          flex: 1,
-                          padding: '10px 12px',
-                          borderRadius: '8px',
-                          border: navMode === 'paged' ? '2px solid #0066ff' : '1px solid #ddd',
-                          backgroundColor: navMode === 'paged' ? 'rgba(0,102,255,0.08)' : '#fff',
-                          cursor: 'pointer',
-                          fontWeight: 700,
-                          fontSize: '12px',
-                          color: '#333'
-                        }}
-                      >
-                        {t('toolbar.navPaged', 'Sida')}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Page Rotation */}
-                  <div style={{ padding: '12px 14px' }}>
-                    <div style={{ fontSize: '12px', fontWeight: 700, color: '#666', marginBottom: '10px' }}>
-                      {t('toolbar.pageRotation', 'Sidrotation')}
-                    </div>
-                    <div style={{ display: 'flex', gap: '10px' }}>
-                      <button
-                        onClick={() => handleRotatePages([currentPage], 270)}
-                        style={{
-                          flex: 1,
-                          padding: '10px 12px',
-                          borderRadius: '8px',
-                          border: '1px solid #ddd',
-                          backgroundColor: '#fff',
-                          cursor: 'pointer',
-                          fontWeight: 700,
-                          fontSize: '12px',
-                          color: '#333'
-                        }}
-                        title={t('toolbar.rotateLeft', 'Rotera vänster')}
-                      >
-                        ⟲ {t('toolbar.rotateLeft', 'Rotera vänster')}
-                      </button>
-                      <button
-                        onClick={() => handleRotatePages([currentPage], 90)}
-                        style={{
-                          flex: 1,
-                          padding: '10px 12px',
-                          borderRadius: '8px',
-                          border: '1px solid #ddd',
-                          backgroundColor: '#fff',
-                          cursor: 'pointer',
-                          fontWeight: 700,
-                          fontSize: '12px',
-                          color: '#333'
-                        }}
-                        title={t('toolbar.rotateRight', 'Rotera höger')}
-                      >
-                        ⟳ {t('toolbar.rotateRight', 'Rotera höger')}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
+        {/* Controls moved from secondary toolbar */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           {/* Language Switcher */}
-          <select
-            value={i18n.language}
-            onChange={(e) => i18n.changeLanguage(e.target.value)}
-            style={{
-              padding: '6px 10px',
-              backgroundColor: '#333',
-              color: '#fff',
-              border: '1px solid #555',
-              borderRadius: '5px',
-              cursor: 'pointer',
-              fontSize: '0.9rem'
-            }}
-          >
-            <option value="en">EN</option>
-            <option value="sv">SV</option>
-          </select>
-          
-          <label htmlFor="zoom-range" style={{ color: '#fff', display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <LanguageSelector />
+
+          {/* Theme Toggle */}
+          <ThemeToggle />
+
+          {/* Zoom Control */}
+          <label style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
             {t('toolbar.zoom')}:
             <input
-              id="zoom-range"
-              name="zoom"
               type="range"
               min="0.5"
               max="5"
               step="0.1"
               value={zoom}
               onChange={(e) => setZoom(parseFloat(e.target.value))}
-              style={{ 
-                marginLeft: '5px',
-                accentColor: '#ff6b35'
+              className="app-zoom-slider"
+              style={{
+                width: '100px',
+                background: `linear-gradient(to right, #ff6b35 0%, #ff6b35 ${((zoom - 0.5) / (5 - 0.5)) * 100}%, #444 ${((zoom - 0.5) / (5 - 0.5)) * 100}%, #444 100%)`
               }}
             />
-            <span style={{ minWidth: '50px', textAlign: 'right' }}>{Math.round(zoom * 100)}%</span>
+            <span style={{ minWidth: '45px', textAlign: 'right', fontWeight: '500', color: 'var(--text-primary)' }}>{Math.round(zoom * 100)}%</span>
           </label>
 
-          {pdfDoc && (
-            <>
-              <button
-                onClick={() => {
-                  const newPage = Math.max(1, currentPage - 1);
-                  currentPageRef.current = newPage;
-                  setCurrentPage(newPage);
-                  // Scrolla till sidan
-                  scrollToPage(newPage);
-                }}
-                disabled={currentPage === 1}
-                style={{
-                  padding: '8px 16px',
-                  backgroundColor: currentPage === 1 ? '#333' : '#444',
-                  color: '#fff',
-                  border: '1px solid #555',
-                  cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
-                  borderRadius: '5px',
-                  opacity: currentPage === 1 ? 0.5 : 1
-                }}
-              >
-                {t('toolbar.previous')}
-              </button>
-              <span style={{ color: '#fff', padding: '0 10px' }}>{t('toolbar.page')} {currentPage} {t('toolbar.of')} {pdfDoc.numPages}</span>
-              <button
-                onClick={() => {
-                  const newPage = Math.min(pdfDoc.numPages, currentPage + 1);
-                  currentPageRef.current = newPage;
-                  setCurrentPage(newPage);
-                  // Scrolla till sidan
-                  scrollToPage(newPage);
-                }}
-                disabled={currentPage === pdfDoc.numPages}
-                style={{
-                  padding: '8px 16px',
-                  backgroundColor: currentPage === pdfDoc.numPages ? '#333' : '#444',
-                  color: '#fff',
-                  border: '1px solid #555',
-                  cursor: currentPage === pdfDoc.numPages ? 'not-allowed' : 'pointer',
-                  borderRadius: '5px',
-                  opacity: currentPage === pdfDoc.numPages ? 0.5 : 1
-                }}
-              >
-                {t('toolbar.next')}
-              </button>
-            </>
-          )}
-
+          {/* Page Management */}
           {pdfDoc && (
             <button
               onClick={() => setShowPageManagementPanel(true)}
               style={{
-                padding: '8px 16px',
+                padding: '6px 14px',
                 backgroundColor: '#6c757d',
                 color: '#fff',
                 border: 'none',
                 cursor: 'pointer',
                 borderRadius: '5px',
                 fontWeight: '600',
-                transition: 'all 0.2s ease',
-                marginRight: '10px'
+                fontSize: '13px',
+                transition: 'all 0.2s ease'
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.backgroundColor = '#5a6268';
-                e.currentTarget.style.transform = 'translateY(-2px)';
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.backgroundColor = '#6c757d';
-                e.currentTarget.style.transform = 'translateY(0)';
               }}
             >
               {t('toolbar.pageManagement', 'Sidhantering')}
             </button>
           )}
 
+          {/* Download */}
           <button
             onClick={() => setShowDownloadModal(true)}
             style={{
-              padding: '8px 16px',
+              padding: '6px 14px',
               backgroundColor: '#0066ff',
               color: '#fff',
               border: 'none',
               cursor: 'pointer',
               borderRadius: '5px',
               fontWeight: '600',
+              fontSize: '13px',
               transition: 'all 0.2s ease'
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.backgroundColor = '#0052cc';
-              e.currentTarget.style.transform = 'translateY(-2px)';
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.backgroundColor = '#0066ff';
-              e.currentTarget.style.transform = 'translateY(0)';
             }}
           >
             {t('toolbar.download', 'Ladda ner')}
           </button>
+
+
+
         </div>
       </div>
 
-      {/* Main Content Area - med flex row för sidebar och PDF viewer */}
-      <div style={{ 
-        display: 'flex', 
-        flexDirection: 'row', 
-        flex: 1, 
-        height: 'calc(100vh - 60px)', 
-        position: 'relative', 
-        overflow: 'hidden'
-      }}>
-        {/* Thumbnail Sidebar - position absolute så den inte påverkar layouten */}
-        {pdfDoc && (
-          <ThumbnailSidebar
-            pdfDoc={pdfDoc}
-            currentPage={currentPage}
-            onPageSelect={(pageNum) => {
-              currentPageRef.current = pageNum;
-              setCurrentPage(pageNum);
-              scrollToPage(pageNum);
-            }}
-            zoom={zoom}
-            sidebarWidth={sidebarWidth}
-            onWidthChange={handleSidebarWidthChange}
-          />
-        )}
-        
-        {/* Text Settings Sidebar - Använd position absolute så den inte påverkar layouten */}
-        {(tool === 'text' || tool === 'edit-text') && (
-          <div
-            style={{
-              position: 'absolute',
-              top: 0, // Direkt vid kanten där verktygsfältet börjar
-              left: pdfDoc ? `${sidebarWidth}px` : '0', // Börja efter thumbnail sidebar
-              right: '17px', // Lämna utrymme för scrollbaren (vanligtvis 15-17px)
-              zIndex: 40,
-              backgroundColor: '#2a2a2a',
-              borderBottom: '1px solid #444',
-              padding: '15px 20px',
+      {/* Modern Editor Toolbar with Icons */}
+      <EditorToolbar
+        // Navigation
+        onBack={() => {
+          setPdfDoc(null);
+          setPdfData(null);
+          setTextBoxes([]);
+          setWhiteoutBoxes([]);
+          setPatchBoxes([]);
+          setShapeBoxes([]);
+          setHistory([]);
+          setHistoryIndex(-1);
+        }}
+        onCropStart={() => setTool('crop')}
+        // Tool state
+        tool={tool}
+        setTool={setTool}
+        // Zoom
+        zoom={zoom}
+        setZoom={setZoom}
+        // Tool-specific handlers
+        onOcr={() => openToolWithCurrentPdf('ocrPdf')}
+        onSearch={() => {
+          setShowSearchPanel(!showSearchPanel);
+          if (!showSearchPanel) {
+            setTimeout(() => searchInputRef.current?.focus(), 100);
+          }
+        }}
+        showSearchPanel={showSearchPanel}
+        onSelectImage={handleSelectImageFile}
+        pendingImageData={pendingImageData}
+        // Shape settings
+        shapeSettings={shapeSettings}
+        setShapeSettings={setShapeSettings}
+        showShapeTypeDropdown={showShapeTypeDropdown}
+        setShowShapeTypeDropdown={setShowShapeTypeDropdown}
+        // Patch mode
+        patchMode={patchMode}
+        setPatchMode={setPatchMode}
+        setSourceRect={setSourceRect}
+        setSourcePageIndex={setSourcePageIndex}
+        // Highlight
+        setHighlightMode={setHighlightMode}
+        // Selection state
+        selectedElement={selectedElement}
+        selectedType={selectedType}
+        setSelectedElement={setSelectedElement}
+        setSelectedType={setSelectedType}
+        hoveredTextBoxIndex={hoveredTextBoxIndex}
+        setHoveredTextBoxIndex={setHoveredTextBoxIndex}
+        // Sidebar
+        sidebarMode={sidebarMode}
+        setSidebarMode={setSidebarMode}
+        // History
+        historyIndex={historyIndex}
+        historyLength={history.length}
+        onUndo={handleUndo}
+        onRedo={handleRedo}
+        // Delete
+        onDelete={handleDelete}
+        // Download modal
+        onDownload={() => setShowDownloadModal(true)}
+        // Page layout
+        onPageLayout={() => setShowPageLayoutMenu(v => !v)}
+        showPageLayoutMenu={showPageLayoutMenu}
+        settings={settings}
+        onSettingChange={handleSettingChange}
+        showSettingsSidebar={showSettingsSidebar}
+        onToggleSettings={() => setShowSettingsSidebar(v => !v)}
+      />
+
+      {/* Main Content Area: Flex container for Sidebar and Canvas */}
+      <div style={{ display: 'flex', height: 'calc(100vh - 60px)', overflow: 'hidden' }}>
+
+        {/* Left Side: Canvas / Sidebar */}
+        <div style={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'flex' }}>
+
+          {/* Mobile Warning Banner - only visible on small screens */}
+          <MobileWarningBanner />
+
+          {/* Page layout menu container - Fixed to avoid clipping */}
+          <div ref={pageLayoutMenuRef} style={{
+            position: 'fixed',
+            top: '60px',
+            right: '10px',
+            zIndex: 2000,
+            pointerEvents: 'none' // Wrapper shouldn't block clicks, inner content will override
+          }}>
+            {/* Page layout dropdown */}
+            {pdfDoc && (
+              <>
+                {/* Menu content */}
+
+                {showPageLayoutMenu && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: '0px', // Adjusted since wrapper is already positioned
+                      right: 0,
+                      width: '320px',
+                      backgroundColor: '#ffffff',
+                      borderRadius: '10px',
+                      boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
+                      overflow: 'hidden',
+                      zIndex: 2000,
+                      pointerEvents: 'auto'
+                    }}
+                  >
+                    <div style={{ padding: '14px 14px 10px 14px', borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
+                      <div style={{ fontSize: '13px', fontWeight: 700, color: '#333' }}>
+                        {t('toolbar.pageLayout', 'Sidlayout')}
+                      </div>
+                    </div>
+
+                    {/* Page Mode */}
+                    <div style={{ padding: '12px 14px', borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
+                      <div style={{ fontSize: '12px', fontWeight: 700, color: '#666', marginBottom: '10px' }}>
+                        {t('toolbar.pageMode', 'Sidläge')}
+                      </div>
+                      <div style={{ display: 'flex', gap: '10px' }}>
+                        <button
+                          onClick={() => setPageLayoutMode('single')}
+                          style={{
+                            flex: 1,
+                            padding: '10px 10px',
+                            borderRadius: '8px',
+                            border: pageLayoutMode === 'single' ? '2px solid #0066ff' : '1px solid #ddd',
+                            backgroundColor: pageLayoutMode === 'single' ? 'rgba(0,102,255,0.08)' : '#fff',
+                            cursor: 'pointer'
+                          }}
+                          title={t('toolbar.layoutSingle', 'En sida')}
+                        >
+                          <div style={{ width: '34px', height: '26px', margin: '0 auto 8px auto', borderRadius: '4px', border: '2px solid #2a2a2a' }} />
+                          <div style={{ fontSize: '12px', fontWeight: 700, color: '#333' }}>{t('toolbar.layoutSingle', 'En sida')}</div>
+                        </button>
+
+                        <button
+                          onClick={() => setPageLayoutMode('double')}
+                          style={{
+                            flex: 1,
+                            padding: '10px 10px',
+                            borderRadius: '8px',
+                            border: pageLayoutMode === 'double' ? '2px solid #0066ff' : '1px solid #ddd',
+                            backgroundColor: pageLayoutMode === 'double' ? 'rgba(0,102,255,0.08)' : '#fff',
+                            cursor: 'pointer'
+                          }}
+                          title={t('toolbar.layoutDouble', 'Två sidor')}
+                        >
+                          <div style={{ display: 'flex', gap: '6px', width: '74px', margin: '0 auto 8px auto' }}>
+                            <div style={{ flex: 1, height: '26px', borderRadius: '4px', border: '2px solid #2a2a2a' }} />
+                            <div style={{ flex: 1, height: '26px', borderRadius: '4px', border: '2px solid #2a2a2a' }} />
+                          </div>
+                          <div style={{ fontSize: '12px', fontWeight: 700, color: '#333' }}>{t('toolbar.layoutDouble', 'Två sidor')}</div>
+                        </button>
+
+                        <button
+                          onClick={() => setPageLayoutMode('auto')}
+                          style={{
+                            flex: 1,
+                            padding: '10px 10px',
+                            borderRadius: '8px',
+                            border: pageLayoutMode === 'auto' ? '2px solid #0066ff' : '1px solid #ddd',
+                            backgroundColor: pageLayoutMode === 'auto' ? 'rgba(0,102,255,0.08)' : '#fff',
+                            cursor: 'pointer'
+                          }}
+                          title={t('toolbar.layoutAuto', 'Auto')}
+                        >
+                          <div style={{ width: '34px', height: '26px', margin: '0 auto 8px auto', borderRadius: '4px', border: '2px dashed #2a2a2a' }} />
+                          <div style={{ fontSize: '12px', fontWeight: 700, color: '#333' }}>{t('toolbar.layoutAuto', 'Auto')}</div>
+                        </button>
+                      </div>
+
+                      {pageLayoutMode === 'auto' && (
+                        <div style={{ marginTop: '10px', fontSize: '11px', color: '#666' }}>
+                          {t('toolbar.layoutAutoHint', 'Auto växlar mellan en/två sidor beroende på bredd.')}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Page Transition */}
+                    <div style={{ padding: '12px 14px', borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
+                      <div style={{ fontSize: '12px', fontWeight: 700, color: '#666', marginBottom: '10px' }}>
+                        {t('toolbar.pageTransition', 'Sidövergång')}
+                      </div>
+                      <div style={{ display: 'flex', gap: '10px' }}>
+                        <button
+                          onClick={() => setNavMode('scroll')}
+                          style={{
+                            flex: 1,
+                            padding: '10px 12px',
+                            borderRadius: '8px',
+                            border: navMode === 'scroll' ? '2px solid #0066ff' : '1px solid #ddd',
+                            backgroundColor: navMode === 'scroll' ? 'rgba(0,102,255,0.08)' : '#fff',
+                            cursor: 'pointer',
+                            fontWeight: 700,
+                            fontSize: '12px',
+                            color: '#333'
+                          }}
+                        >
+                          {t('toolbar.navScroll', 'Scroll')}
+                        </button>
+                        <button
+                          onClick={() => setNavMode('paged')}
+                          style={{
+                            flex: 1,
+                            padding: '10px 12px',
+                            borderRadius: '8px',
+                            border: navMode === 'paged' ? '2px solid #0066ff' : '1px solid #ddd',
+                            backgroundColor: navMode === 'paged' ? 'rgba(0,102,255,0.08)' : '#fff',
+                            cursor: 'pointer',
+                            fontWeight: 700,
+                            fontSize: '12px',
+                            color: '#333'
+                          }}
+                        >
+                          {t('toolbar.navPaged', 'Sida')}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Page Rotation */}
+                    <div style={{ padding: '12px 14px' }}>
+                      <div style={{ fontSize: '12px', fontWeight: 700, color: '#666', marginBottom: '10px' }}>
+                        {t('toolbar.pageRotation', 'Sidrotation')}
+                      </div>
+                      <div style={{ display: 'flex', gap: '10px' }}>
+                        <button
+                          onClick={() => handleRotatePages([currentPage], 270)}
+                          style={{
+                            flex: 1,
+                            padding: '10px 12px',
+                            borderRadius: '8px',
+                            border: '1px solid #ddd',
+                            backgroundColor: '#fff',
+                            cursor: 'pointer',
+                            fontWeight: 700,
+                            fontSize: '12px',
+                            color: '#333'
+                          }}
+                          title={t('toolbar.rotateLeft', 'Rotera vänster')}
+                        >
+                          ⟲ {t('toolbar.rotateLeft', 'Rotera vänster')}
+                        </button>
+                        <button
+                          onClick={() => handleRotatePages([currentPage], 90)}
+                          style={{
+                            flex: 1,
+                            padding: '10px 12px',
+                            borderRadius: '8px',
+                            border: '1px solid #ddd',
+                            backgroundColor: '#fff',
+                            cursor: 'pointer',
+                            fontWeight: 700,
+                            fontSize: '12px',
+                            color: '#333'
+                          }}
+                          title={t('toolbar.rotateRight', 'Rotera höger')}
+                        >
+                          ⟳ {t('toolbar.rotateRight', 'Rotera höger')}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Search Panel */}
+          {showSearchPanel && pdfDoc && (
+            <div style={{
               display: 'flex',
-              gap: '30px',
               alignItems: 'center',
-              flexWrap: 'wrap',
-              animation: 'slideDown 0.3s ease-out',
-              transition: 'top 0.3s ease',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
-            }}
-          >
-          <style>{`
+              gap: '10px',
+              padding: '8px 16px',
+              backgroundColor: '#f5f5f5',
+              borderBottom: '1px solid #ddd',
+              position: 'relative',
+              zIndex: 99
+            }}>
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  // Debounced search
+                  clearTimeout(searchInputRef.current?.searchTimeout);
+                  searchInputRef.current.searchTimeout = setTimeout(() => {
+                    performSearch(e.target.value);
+                  }, 300);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    if (e.shiftKey) {
+                      prevSearchResult();
+                    } else {
+                      nextSearchResult();
+                    }
+                  } else if (e.key === 'Escape') {
+                    closeSearch();
+                  }
+                }}
+                placeholder={t('search.placeholder', 'Sök i dokumentet...')}
+                style={{
+                  flex: 1,
+                  maxWidth: '300px',
+                  padding: '8px 12px',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                  fontSize: '14px',
+                  outline: 'none'
+                }}
+              />
+
+              {searchResults.length > 0 && (
+                <span style={{ color: '#666', fontSize: '14px', whiteSpace: 'nowrap' }}>
+                  {currentSearchIndex + 1} {t('toolbar.of', 'av')} {searchResults.length}
+                </span>
+              )}
+
+              {searchQuery && searchResults.length === 0 && (
+                <span style={{ color: '#999', fontSize: '14px' }}>
+                  {t('search.noResults', 'Inga träffar')}
+                </span>
+              )}
+
+              <button
+                onClick={prevSearchResult}
+                disabled={searchResults.length === 0}
+                style={{
+                  padding: '6px 12px',
+                  backgroundColor: searchResults.length === 0 ? '#ccc' : '#fff',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                  cursor: searchResults.length === 0 ? 'not-allowed' : 'pointer',
+                  fontSize: '14px'
+                }}
+                title={t('search.previous', 'Föregående träff')}
+              >
+                ‹
+              </button>
+
+              <button
+                onClick={nextSearchResult}
+                disabled={searchResults.length === 0}
+                style={{
+                  padding: '6px 12px',
+                  backgroundColor: searchResults.length === 0 ? '#ccc' : '#fff',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                  cursor: searchResults.length === 0 ? 'not-allowed' : 'pointer',
+                  fontSize: '14px'
+                }}
+                title={t('search.next', 'Nästa träff')}
+              >
+                ›
+              </button>
+
+              <button
+                onClick={closeSearch}
+                style={{
+                  padding: '6px 12px',
+                  backgroundColor: '#e74c3c',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '500'
+                }}
+              >
+                {t('search.close', 'Stäng')}
+              </button>
+            </div>
+          )}
+
+          {/* Main Content Area - med flex row för sidebar och PDF viewer */}
+          <div style={{
+            display: 'flex',
+            flexDirection: 'row',
+            flex: 1,
+            height: 'calc(100vh - 60px)',
+            position: 'relative',
+            overflow: 'hidden'
+          }}>
+            {/* Left Sidebar - Thumbnails / Outline / Comments / Bookmarks */}
+            {pdfDoc && sidebarMode === 'thumbnails' && (
+              <ThumbnailSidebar
+                pdfDoc={pdfDoc}
+                currentPage={currentPage}
+                onPageSelect={(pageNum) => {
+                  currentPageRef.current = pageNum;
+                  setCurrentPage(pageNum);
+                  scrollToPage(pageNum);
+                }}
+                zoom={zoom}
+                sidebarWidth={sidebarWidth}
+                onWidthChange={handleSidebarWidthChange}
+              />
+            )}
+
+            {pdfDoc && sidebarMode === 'outline' && (
+              <div style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                bottom: 0,
+                width: `${sidebarWidth}px`,
+                backgroundColor: 'var(--bg-secondary)',
+                borderRight: '1px solid var(--border-color)',
+                zIndex: 5,
+                paddingTop: '0px' // No extra padding needed as it starts below toolbar
+              }}>
+                <OutlineSidebar outline={pdfOutline} onJumpToDest={(dest) => {
+                  const jumpToDest = async () => {
+                    if (!dest) return;
+                    try {
+                      const destIndex = await pdfDoc.getPageIndex(dest[0]);
+                      setCurrentPage(destIndex + 1);
+                      scrollToPage(destIndex + 1);
+                    } catch (e) {
+                      console.error('Dest jump failed', e);
+                    }
+                  };
+
+                  if (typeof dest === 'string') {
+                    pdfDoc.getDestination(dest).then(d => {
+                      if (d) {
+                        pdfDoc.getPageIndex(d[0]).then(idx => {
+                          setCurrentPage(idx + 1);
+                          scrollToPage(idx + 1);
+                        });
+                      }
+                    });
+                  } else if (Array.isArray(dest)) {
+                    pdfDoc.getPageIndex(dest[0]).then(idx => {
+                      setCurrentPage(idx + 1);
+                      scrollToPage(idx + 1);
+                    }).catch(err => {
+                      if (Number.isInteger(dest[0])) {
+                        setCurrentPage(dest[0] + 1);
+                        scrollToPage(dest[0] + 1);
+                      }
+                    });
+                  }
+                }} />
+              </div>
+            )}
+
+            {pdfDoc && sidebarMode === 'comments' && (
+              <div style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                bottom: 0,
+                width: `${sidebarWidth}px`,
+                backgroundColor: 'var(--bg-secondary)',
+                borderRight: '1px solid var(--border-color)',
+                zIndex: 5,
+                paddingTop: '0px'
+              }}>
+                <CommentListSidebar
+                  commentBoxes={commentBoxes}
+                  onSelectComment={(index) => {
+                    const box = commentBoxes[index];
+                    if (box) {
+                      setCurrentPage(box.pageIndex + 1);
+                      setSelectedType('comment');
+                      setSelectedElement(index);
+                      // Scroll to specific element with a slight delay to allow render
+                      setTimeout(() => {
+                        scrollToElement(box.pageIndex, box.rect);
+                      }, 100);
+                    }
+                  }}
+                />
+              </div>
+            )}
+
+            {pdfDoc && sidebarMode === 'bookmarks' && (
+              <div style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                bottom: 0,
+                width: `${sidebarWidth}px`,
+                backgroundColor: 'var(--bg-secondary)',
+                borderRight: '1px solid var(--border-color)',
+                zIndex: 5,
+                paddingTop: '0px'
+              }}>
+                <BookmarkSidebar
+                  bookmarks={bookmarks}
+                  currentPage={currentPage}
+                  onAddBookmark={addBookmark}
+                  onRemoveBookmark={removeBookmark}
+                  onUpdateBookmark={updateBookmark}
+                  onSelectBookmark={(pageIndex) => {
+                    setCurrentPage(pageIndex + 1);
+                    scrollToPage(pageIndex + 1);
+                  }}
+                />
+              </div>
+            )}
+
+            {/* Text Settings Sidebar - Använd position absolute så den inte påverkar layouten */}
+            {(tool === 'text' || tool === 'edit-text') && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 0, // Direkt vid kanten där verktygsfältet börjar
+                  left: pdfDoc ? `${sidebarWidth}px` : '0', // Börja efter thumbnail sidebar
+                  right: '17px', // Lämna utrymme för scrollbaren (vanligtvis 15-17px)
+                  zIndex: 40,
+                  backgroundColor: 'var(--bg-secondary)',
+                  borderBottom: '1px solid var(--border-color)',
+                  padding: '15px 20px',
+                  display: 'flex',
+                  gap: '30px',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  animation: 'slideDown 0.3s ease-out',
+                  transition: 'top 0.3s ease',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+                }}
+              >
+                <style>{`
             @keyframes slideDown {
               from {
                 opacity: 0;
@@ -4828,2423 +5831,2889 @@ export default function App() {
             }
           `}</style>
 
-          {/* Font Size */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <label htmlFor="font-size-input" style={{ color: '#fff', fontSize: '0.9rem', fontWeight: '500', minWidth: '80px' }}>
-              {t('textSidebar.size')}:
-            </label>
-            <input
-              id="font-size-input"
-              name="font-size"
-              ref={fontSizeInputRef}
-              type="number"
-              min="6"
-              max="72"
-              step="1"
-              value={fontSizeInput}
-              onChange={(e) => {
-                // Uppdatera bara lokal input-state, låt användaren skriva fritt
-                setFontSizeInput(e.target.value);
-              }}
-              onBlur={(e) => {
-                // När användaren lämnar fältet, validera och uppdatera textSettings
-                const inputValue = e.target.value.trim();
-                if (inputValue === '' || inputValue === '-') {
-                  // Om tomt, återställ till nuvarande värde
-                  setFontSizeInput(String(Math.round(textSettings.fontSizePt)));
-                  return;
-                }
-                const numValue = parseInt(inputValue, 10);
-                if (isNaN(numValue) || numValue < 6 || numValue > 72) {
-                  // Ogiltigt värde, återställ till nuvarande värde
-                  setFontSizeInput(String(Math.round(textSettings.fontSizePt)));
-                } else {
-                  // Giltigt värde, uppdatera textSettings
-                  setTextSettings({ ...textSettings, fontSizePt: numValue });
-                  setFontSizeInput(String(numValue));
-                }
-              }}
-              onKeyDown={(e) => {
-                // När användaren trycker Enter, validera och uppdatera
-                if (e.key === 'Enter') {
-                  e.target.blur(); // Triggar onBlur som validerar
-                }
-              }}
-              style={{
-                width: '70px',
-                padding: '6px 10px',
-                backgroundColor: '#333',
-                color: '#fff',
-                border: '1px solid #555',
-                borderRadius: '5px',
-                fontSize: '0.9rem'
-              }}
-            />
-            <span style={{ color: '#888', fontSize: '0.85rem' }}>pt</span>
-          </div>
-
-          {/* Font Family */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <label htmlFor="font-family-select" style={{ color: '#fff', fontSize: '0.9rem', fontWeight: '500', minWidth: '80px' }}>
-              {t('textSidebar.fontFamily')}:
-            </label>
-            <select
-              id="font-family-select"
-              name="font-family"
-              value={textSettings.fontFamily}
-              onChange={(e) => setTextSettings({ ...textSettings, fontFamily: e.target.value })}
-              style={{
-                padding: '6px 10px',
-                backgroundColor: '#333',
-                color: '#fff',
-                border: '1px solid #555',
-                borderRadius: '5px',
-                fontSize: '0.9rem',
-                cursor: 'pointer',
-                minWidth: '150px'
-              }}
-            >
-              <option value="Helvetica">Helvetica</option>
-              <option value="Arial">Arial</option>
-              <option value="Times-Roman">Times Roman</option>
-              <option value="Courier">Courier</option>
-              <option value="Georgia">Georgia</option>
-              <option value="Verdana">Verdana</option>
-            </select>
-          </div>
-
-          {/* Text Color */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', position: 'relative' }}>
-            <label htmlFor="text-color-picker" style={{ color: '#fff', fontSize: '0.9rem', fontWeight: '500', minWidth: '80px' }}>
-              {t('textSidebar.color')}:
-            </label>
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', position: 'relative' }}>
-              <div style={{ position: 'relative' }} data-color-picker>
-                <button
-                  onClick={() => setShowColorPalette(!showColorPalette)}
-                  style={{
-                    width: '50px',
-                    height: '35px',
-                    border: '2px solid #555',
-                    borderRadius: '5px',
-                    cursor: 'pointer',
-                    backgroundColor: textSettings.color,
-                    transition: 'all 0.2s ease',
-                    boxShadow: showColorPalette ? '0 0 0 2px rgba(255, 107, 53, 0.5)' : 'none'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.borderColor = '#888';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.borderColor = '#555';
-                  }}
-                  title={t('textSidebar.selectColor')}
-                />
-                {/* Dropdown med vanliga färger */}
-                {showColorPalette && (
-                  <div
-                    data-color-picker
-                    style={{
-                      position: 'absolute',
-                      top: '45px',
-                      left: '0',
-                      backgroundColor: '#2a2a2a',
-                      border: '1px solid #555',
-                      borderRadius: '8px',
-                      padding: '12px',
-                      zIndex: 1000,
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-                      display: 'flex',
-                      flexWrap: 'wrap',
-                      gap: '8px',
-                      width: '200px'
-                    }}
-                  >
-                    {[
-                      { nameKey: 'colors.black', color: '#000000' },
-                      { nameKey: 'colors.white', color: '#FFFFFF' },
-                      { nameKey: 'colors.red', color: '#FF0000' },
-                      { nameKey: 'colors.blue', color: '#0000FF' },
-                      { nameKey: 'colors.green', color: '#008000' },
-                      { nameKey: 'colors.yellow', color: '#FFFF00' },
-                      { nameKey: 'colors.orange', color: '#FF6B35' },
-                      { nameKey: 'colors.purple', color: '#800080' },
-                      { nameKey: 'colors.pink', color: '#FF69B4' },
-                      { nameKey: 'colors.gray', color: '#808080' },
-                      { nameKey: 'colors.darkBlue', color: '#000080' },
-                      { nameKey: 'colors.darkGreen', color: '#006400' }
-                    ].map((colorOption) => (
-                      <button
-                        key={colorOption.color}
-                        onClick={() => {
-                          setTextSettings({ ...textSettings, color: colorOption.color });
-                          setShowColorPalette(false);
-                        }}
-                        title={t(colorOption.nameKey)}
-                        style={{
-                          width: '32px',
-                          height: '32px',
-                          backgroundColor: colorOption.color,
-                          border: textSettings.color.toLowerCase() === colorOption.color.toLowerCase() 
-                            ? '3px solid #ff6b35' 
-                            : '2px solid #555',
-                          borderRadius: '5px',
-                          cursor: 'pointer',
-                          transition: 'all 0.2s ease',
-                          boxShadow: textSettings.color.toLowerCase() === colorOption.color.toLowerCase()
-                            ? '0 0 0 2px rgba(255, 107, 53, 0.3)'
-                            : 'none'
-                        }}
-                        onMouseEnter={(e) => {
-                          if (textSettings.color.toLowerCase() !== colorOption.color.toLowerCase()) {
-                            e.currentTarget.style.transform = 'scale(1.1)';
-                            e.currentTarget.style.borderColor = '#888';
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          if (textSettings.color.toLowerCase() !== colorOption.color.toLowerCase()) {
-                            e.currentTarget.style.transform = 'scale(1)';
-                            e.currentTarget.style.borderColor = '#555';
-                          }
-                        }}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-              <input
-                id="text-color-picker"
-                name="text-color"
-                type="color"
-                value={textSettings.color}
-                onChange={(e) => setTextSettings({ ...textSettings, color: e.target.value })}
-                style={{
-                  width: '50px',
-                  height: '35px',
-                  border: '1px solid #555',
-                  borderRadius: '5px',
-                  cursor: 'pointer',
-                  backgroundColor: '#333'
-                }}
-              />
-              <input
-                id="text-color-text"
-                name="text-color-hex"
-                type="text"
-                value={textSettings.color}
-                onChange={(e) => setTextSettings({ ...textSettings, color: e.target.value })}
-                style={{
-                  width: '90px',
-                  padding: '6px 10px',
-                  backgroundColor: '#333',
-                  color: '#fff',
-                  border: '1px solid #555',
-                  borderRadius: '5px',
-                  fontSize: '0.85rem',
-                  fontFamily: 'monospace'
-                }}
-              />
-            </div>
-          </div>
-
-          {/* Font Weight & Style */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <label style={{ color: '#fff', fontSize: '0.9rem', fontWeight: '500', minWidth: '80px' }}>
-              {t('textSidebar.style')}:
-            </label>
-            <div style={{ display: 'flex', gap: '5px' }}>
-              <button
-                onClick={() => {
-                  const newWeight = textSettings.fontWeight === 'bold' ? 'normal' : 'bold';
-                  setTextSettings({ ...textSettings, fontWeight: newWeight });
-                }}
-                style={{
-                  padding: '6px 12px',
-                  backgroundColor: textSettings.fontWeight === 'bold' ? '#ff6b35' : '#333',
-                  color: '#fff',
-                  border: textSettings.fontWeight === 'bold' ? '1px solid #ff6b35' : '1px solid #555',
-                  borderRadius: '5px',
-                  cursor: 'pointer',
-                  fontWeight: 'bold',
-                  fontSize: '0.9rem',
-                  transition: 'all 0.2s ease'
-                }}
-                title={t('textSidebar.bold')}
-              >
-                <strong>B</strong>
-              </button>
-              <button
-                onClick={() => {
-                  const newStyle = textSettings.fontStyle === 'italic' ? 'normal' : 'italic';
-                  setTextSettings({ ...textSettings, fontStyle: newStyle });
-                }}
-                style={{
-                  padding: '6px 12px',
-                  backgroundColor: textSettings.fontStyle === 'italic' ? '#ff6b35' : '#333',
-                  color: '#fff',
-                  border: textSettings.fontStyle === 'italic' ? '1px solid #ff6b35' : '1px solid #555',
-                  borderRadius: '5px',
-                  cursor: 'pointer',
-                  fontStyle: 'italic',
-                  fontSize: '0.9rem',
-                  transition: 'all 0.2s ease'
-                }}
-                title={t('textSidebar.italic')}
-              >
-                <em>I</em>
-              </button>
-            </div>
-          </div>
-
-          {/* Preview */}
-          <div style={{ 
-            marginLeft: 'auto', 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: '10px',
-            padding: '8px 15px',
-            backgroundColor: '#333',
-            borderRadius: '5px',
-            border: '1px solid #555'
-          }}>
-            <span style={{ color: '#888', fontSize: '0.85rem', marginRight: '5px' }}>{t('textSidebar.preview')}:</span>
-            <span
-              style={{
-                fontSize: '14px', // Fast storlek oavsett textrutans fontstorlek
-                fontFamily: textSettings.fontFamily,
-                color: textSettings.color,
-                fontWeight: textSettings.fontWeight,
-                fontStyle: textSettings.fontStyle
-              }}
-            >
-              Aa
-            </span>
-          </div>
-        </div>
-      )}
-
-        {/* Comment Settings Sidebar - Visas när comment-verktyget är aktivt */}
-        {tool === 'comment' && (
-          <div
-            data-comment-sidebar
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: pdfDoc ? `${sidebarWidth}px` : '0',
-              right: '17px',
-              zIndex: 50,
-              backgroundColor: '#2a2a2a',
-              borderBottom: '1px solid #444',
-              padding: '15px 20px',
-              display: 'flex',
-              gap: '20px',
-              alignItems: 'center',
-              flexWrap: 'wrap',
-              animation: 'slideDown 0.3s ease-out',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
-            }}
-          >
-            <style>{`
-              @keyframes slideDown {
-                from {
-                  opacity: 0;
-                  transform: translateY(-10px);
-                }
-                to {
-                  opacity: 1;
-                  transform: translateY(0);
-                }
-              }
-            `}</style>
-
-            {/* Delete comment button */}
-            <button
-              onClick={() => {
-                if (selectedElement !== null && selectedType === 'comment') {
-                  const confirmed = window.confirm(t('commentSidebar.confirmDelete', 'Vill du ta bort kommentaren?'));
-                  if (confirmed) {
-                    handleDelete();
-                    setTool(null); // stäng comment-läget när kommentaren tas bort via sidomenyn
-                  }
-                }
-              }}
-              disabled={selectedElement === null || selectedType !== 'comment'}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-                padding: '10px 14px',
-                backgroundColor: '#c0392b',
-                color: '#fff',
-                border: '1px solid #a93226',
-                borderRadius: '6px',
-                cursor: selectedElement !== null && selectedType === 'comment' ? 'pointer' : 'not-allowed',
-                opacity: selectedElement !== null && selectedType === 'comment' ? 1 : 0.5,
-                minWidth: '44px',
-                height: '42px',
-                boxShadow: '0 2px 6px rgba(0,0,0,0.25)'
-              }}
-              title={t('commentSidebar.delete', 'Ta bort kommentar')}
-            >
-              🗑️
-            </button>
-
-            {/* Comment Color */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', position: 'relative' }}>
-              <label htmlFor="comment-color-picker" style={{ color: '#fff', fontSize: '0.9rem', fontWeight: '500', minWidth: '80px' }}>
-                {t('commentSidebar.color')}:
-              </label>
-              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', position: 'relative' }}>
-                <div style={{ position: 'relative' }} data-comment-color-picker>
-                  <button
-                    onClick={() => setShowCommentColorPalette(!showCommentColorPalette)}
-                    style={{
-                      width: '50px',
-                      height: '35px',
-                      border: '2px solid #555',
-                      borderRadius: '5px',
-                      cursor: 'pointer',
-                      backgroundColor: commentSettings.backgroundColor,
-                      transition: 'all 0.2s ease',
-                      boxShadow: showCommentColorPalette ? '0 0 0 2px rgba(255, 107, 53, 0.5)' : 'none'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor = '#888';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = '#555';
-                    }}
-                    title={t('commentSidebar.color')}
-                  />
-                  {/* Dropdown med färger */}
-                  {showCommentColorPalette && (
-                    <div
-                      data-comment-color-picker
-                      style={{
-                        position: 'absolute',
-                        top: '45px',
-                        left: '0',
-                        backgroundColor: '#2a2a2a',
-                        border: '1px solid #555',
-                        borderRadius: '8px',
-                        padding: '12px',
-                        zIndex: 1000,
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-                        display: 'flex',
-                        flexWrap: 'wrap',
-                        gap: '8px',
-                        width: '200px'
-                      }}
-                    >
-                      {[
-                        { color: '#FFF59D', name: 'Gul' },
-                        { color: '#FFA870', name: 'Orange' },
-                        { color: '#FF7A7A', name: 'Röd' },
-                        { color: '#FF8AF5', name: 'Magenta' },
-                        { color: '#7AA8FF', name: 'Blå' },
-                        { color: '#7DFFA3', name: 'Lime grön' }
-                      ].map((colorOption) => (
-                        <button
-                          key={colorOption.color}
-                          onClick={() => {
-                            setCommentSettings({ ...commentSettings, backgroundColor: colorOption.color });
-                            setShowCommentColorPalette(false);
-                            // Uppdatera även vald kommentar om en är markerad
-                            if (selectedElement !== null && selectedType === 'comment') {
-                              const newBoxes = [...commentBoxes];
-                              newBoxes[selectedElement] = { 
-                                ...newBoxes[selectedElement], 
-                                backgroundColor: colorOption.color 
-                              };
-                              setCommentBoxes(newBoxes);
-                              saveToHistory(null, null, null, null, newBoxes);
-                            }
-                          }}
-                          title={colorOption.name}
-                          style={{
-                            width: '32px',
-                            height: '32px',
-                            backgroundColor: colorOption.color,
-                            border: commentSettings.backgroundColor.toLowerCase() === colorOption.color.toLowerCase() 
-                              ? '3px solid #ff6b35' 
-                              : '2px solid #555',
-                            borderRadius: '5px',
-                            cursor: 'pointer',
-                            transition: 'all 0.2s ease',
-                            boxShadow: commentSettings.backgroundColor.toLowerCase() === colorOption.color.toLowerCase()
-                              ? '0 0 0 2px rgba(255, 107, 53, 0.3)'
-                              : 'none'
-                          }}
-                          onMouseEnter={(e) => {
-                            if (commentSettings.backgroundColor.toLowerCase() !== colorOption.color.toLowerCase()) {
-                              e.currentTarget.style.transform = 'scale(1.1)';
-                              e.currentTarget.style.borderColor = '#888';
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            if (commentSettings.backgroundColor.toLowerCase() !== colorOption.color.toLowerCase()) {
-                              e.currentTarget.style.transform = 'scale(1)';
-                              e.currentTarget.style.borderColor = '#555';
-                            }
-                          }}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <input
-                  id="comment-color-picker"
-                  name="comment-color"
-                  type="color"
-                  value={commentSettings.backgroundColor}
-                  onChange={(e) => {
-                    const newColor = e.target.value;
-                    setCommentSettings({ ...commentSettings, backgroundColor: newColor });
-                    // Uppdatera även vald kommentar om en är markerad
-                    if (selectedElement !== null && selectedType === 'comment') {
-                      const newBoxes = [...commentBoxes];
-                      newBoxes[selectedElement] = { ...newBoxes[selectedElement], backgroundColor: newColor };
-                      setCommentBoxes(newBoxes);
-                      saveToHistory(null, null, null, null, newBoxes);
-                    }
-                  }}
-                  style={{
-                    width: '50px',
-                    height: '35px',
-                    border: '1px solid #555',
-                    borderRadius: '5px',
-                    cursor: 'pointer',
-                    backgroundColor: '#333'
-                  }}
-                />
-                <input
-                  id="comment-color-text"
-                  name="comment-color-hex"
-                  type="text"
-                  value={commentSettings.backgroundColor}
-                  onChange={(e) => {
-                    const newColor = e.target.value;
-                    setCommentSettings({ ...commentSettings, backgroundColor: newColor });
-                    // Uppdatera även vald kommentar om en är markerad
-                    if (selectedElement !== null && selectedType === 'comment') {
-                      const newBoxes = [...commentBoxes];
-                      newBoxes[selectedElement] = { ...newBoxes[selectedElement], backgroundColor: newColor };
-                      setCommentBoxes(newBoxes);
-                    }
-                  }}
-                  onBlur={() => {
-                    // Spara till history när användaren är klar med att skriva
-                    if (selectedElement !== null && selectedType === 'comment') {
-                      saveToHistory(null, null, null, null, commentBoxes);
-                    }
-                  }}
-                  style={{
-                    width: '90px',
-                    padding: '6px 10px',
-                    backgroundColor: '#333',
-                    color: '#fff',
-                    border: '1px solid #555',
-                    borderRadius: '5px',
-                    fontSize: '0.85rem',
-                    fontFamily: 'monospace'
-                  }}
-                />
-              </div>
-            </div>
-
-            {/* Icon Selection */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <label style={{ color: '#fff', fontSize: '0.9rem', fontWeight: '500', minWidth: '80px' }}>
-                {t('commentSidebar.icon')}:
-              </label>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                {/* Speech Bubble */}
-                <button
-                  onClick={() => {
-                    setCommentSettings({ ...commentSettings, icon: 'speech-bubble' });
-                    // Uppdatera även vald kommentar om en är markerad
-                    if (selectedElement !== null && selectedType === 'comment') {
-                      const newBoxes = [...commentBoxes];
-                      newBoxes[selectedElement] = { ...newBoxes[selectedElement], icon: 'speech-bubble' };
-                      setCommentBoxes(newBoxes);
-                      saveToHistory(null, null, null, null, newBoxes);
-                    }
-                  }}
-                  style={{
-                    width: '35px',
-                    height: '35px',
-                    backgroundColor: commentSettings.icon === 'speech-bubble' ? '#ff6b35' : '#333',
-                    border: commentSettings.icon === 'speech-bubble' ? '2px solid #ff6b35' : '2px solid #555',
-                    borderRadius: '5px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '18px',
-                    transition: 'all 0.2s ease'
-                  }}
-                  title={t('commentSidebar.speechBubble')}
-                  onMouseEnter={(e) => {
-                    if (commentSettings.icon !== 'speech-bubble') {
-                      e.currentTarget.style.backgroundColor = '#444';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (commentSettings.icon !== 'speech-bubble') {
-                      e.currentTarget.style.backgroundColor = '#333';
-                    }
-                  }}
-                >
-                  💬
-                </button>
-                
-                {/* Arrow */}
-                <button
-                  onClick={() => {
-                    setCommentSettings({ ...commentSettings, icon: 'arrow' });
-                    // Uppdatera även vald kommentar om en är markerad
-                    if (selectedElement !== null && selectedType === 'comment') {
-                      const newBoxes = [...commentBoxes];
-                      newBoxes[selectedElement] = { ...newBoxes[selectedElement], icon: 'arrow' };
-                      setCommentBoxes(newBoxes);
-                      saveToHistory(null, null, null, null, newBoxes);
-                    }
-                  }}
-                  style={{
-                    width: '35px',
-                    height: '35px',
-                    backgroundColor: commentSettings.icon === 'arrow' ? '#ff6b35' : '#333',
-                    border: commentSettings.icon === 'arrow' ? '2px solid #ff6b35' : '2px solid #555',
-                    borderRadius: '5px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '18px',
-                    transition: 'all 0.2s ease'
-                  }}
-                  title={t('commentSidebar.arrow')}
-                  onMouseEnter={(e) => {
-                    if (commentSettings.icon !== 'arrow') {
-                      e.currentTarget.style.backgroundColor = '#444';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (commentSettings.icon !== 'arrow') {
-                      e.currentTarget.style.backgroundColor = '#333';
-                    }
-                  }}
-                >
-                  →
-                </button>
-                
-                {/* Checkmark */}
-                <button
-                  onClick={() => {
-                    setCommentSettings({ ...commentSettings, icon: 'checkmark' });
-                    // Uppdatera även vald kommentar om en är markerad
-                    if (selectedElement !== null && selectedType === 'comment') {
-                      const newBoxes = [...commentBoxes];
-                      newBoxes[selectedElement] = { ...newBoxes[selectedElement], icon: 'checkmark' };
-                      setCommentBoxes(newBoxes);
-                      saveToHistory(null, null, null, null, newBoxes);
-                    }
-                  }}
-                  style={{
-                    width: '35px',
-                    height: '35px',
-                    backgroundColor: commentSettings.icon === 'checkmark' ? '#ff6b35' : '#333',
-                    border: commentSettings.icon === 'checkmark' ? '2px solid #ff6b35' : '2px solid #555',
-                    borderRadius: '5px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '18px',
-                    transition: 'all 0.2s ease'
-                  }}
-                  title={t('commentSidebar.checkmark')}
-                  onMouseEnter={(e) => {
-                    if (commentSettings.icon !== 'checkmark') {
-                      e.currentTarget.style.backgroundColor = '#444';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (commentSettings.icon !== 'checkmark') {
-                      e.currentTarget.style.backgroundColor = '#333';
-                    }
-                  }}
-                >
-                  ✓
-                </button>
-                
-                {/* X */}
-                <button
-                  onClick={() => {
-                    setCommentSettings({ ...commentSettings, icon: 'x' });
-                    // Uppdatera även vald kommentar om en är markerad
-                    if (selectedElement !== null && selectedType === 'comment') {
-                      const newBoxes = [...commentBoxes];
-                      newBoxes[selectedElement] = { ...newBoxes[selectedElement], icon: 'x' };
-                      setCommentBoxes(newBoxes);
-                      saveToHistory(null, null, null, null, newBoxes);
-                    }
-                  }}
-                  style={{
-                    width: '35px',
-                    height: '35px',
-                    backgroundColor: commentSettings.icon === 'x' ? '#ff6b35' : '#333',
-                    border: commentSettings.icon === 'x' ? '2px solid #ff6b35' : '2px solid #555',
-                    borderRadius: '5px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '18px',
-                    transition: 'all 0.2s ease'
-                  }}
-                  title={t('commentSidebar.x')}
-                  onMouseEnter={(e) => {
-                    if (commentSettings.icon !== 'x') {
-                      e.currentTarget.style.backgroundColor = '#444';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (commentSettings.icon !== 'x') {
-                      e.currentTarget.style.backgroundColor = '#333';
-                    }
-                  }}
-                >
-                  ✕
-                </button>
-                
-                {/* Star */}
-                <button
-                  onClick={() => {
-                    setCommentSettings({ ...commentSettings, icon: 'star' });
-                    // Uppdatera även vald kommentar om en är markerad
-                    if (selectedElement !== null && selectedType === 'comment') {
-                      const newBoxes = [...commentBoxes];
-                      newBoxes[selectedElement] = { ...newBoxes[selectedElement], icon: 'star' };
-                      setCommentBoxes(newBoxes);
-                      saveToHistory(null, null, null, null, newBoxes);
-                    }
-                  }}
-                  style={{
-                    width: '35px',
-                    height: '35px',
-                    backgroundColor: commentSettings.icon === 'star' ? '#ff6b35' : '#333',
-                    border: commentSettings.icon === 'star' ? '2px solid #ff6b35' : '2px solid #555',
-                    borderRadius: '5px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '18px',
-                    transition: 'all 0.2s ease'
-                  }}
-                  title={t('commentSidebar.star')}
-                  onMouseEnter={(e) => {
-                    if (commentSettings.icon !== 'star') {
-                      e.currentTarget.style.backgroundColor = '#444';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (commentSettings.icon !== 'star') {
-                      e.currentTarget.style.backgroundColor = '#333';
-                    }
-                  }}
-                >
-                  ★
-                </button>
-                
-                {/* Key */}
-                <button
-                  onClick={() => {
-                    setCommentSettings({ ...commentSettings, icon: 'key' });
-                    // Uppdatera även vald kommentar om en är markerad
-                    if (selectedElement !== null && selectedType === 'comment') {
-                      const newBoxes = [...commentBoxes];
-                      newBoxes[selectedElement] = { ...newBoxes[selectedElement], icon: 'key' };
-                      setCommentBoxes(newBoxes);
-                      saveToHistory(null, null, null, null, newBoxes);
-                    }
-                  }}
-                  style={{
-                    width: '35px',
-                    height: '35px',
-                    backgroundColor: commentSettings.icon === 'key' ? '#ff6b35' : '#333',
-                    border: commentSettings.icon === 'key' ? '2px solid #ff6b35' : '2px solid #555',
-                    borderRadius: '5px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '18px',
-                    transition: 'all 0.2s ease'
-                  }}
-                  title={t('commentSidebar.key')}
-                  onMouseEnter={(e) => {
-                    if (commentSettings.icon !== 'key') {
-                      e.currentTarget.style.backgroundColor = '#444';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (commentSettings.icon !== 'key') {
-                      e.currentTarget.style.backgroundColor = '#333';
-                    }
-                  }}
-                >
-                  🔑
-                </button>
-              </div>
-            </div>
-
-            {/* Preview */}
-            <div style={{ 
-              marginLeft: 'auto', 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '10px',
-              padding: '8px 15px',
-              backgroundColor: '#333',
-              borderRadius: '5px',
-              border: '1px solid #555'
-            }}>
-              <span style={{ color: '#888', fontSize: '0.85rem', marginRight: '5px' }}>
-                {t('commentSidebar.preview')}:
-              </span>
-              <div
-                style={{
-                  width: '24px',
-                  height: '24px',
-                  backgroundColor: commentSettings.backgroundColor,
-                  border: '2px solid #555',
-                  borderRadius: '2px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '14px',
-                  transform: 'rotate(-2deg)'
-                }}
-              >
-                {commentSettings.icon === 'speech-bubble' && '💬'}
-                {commentSettings.icon === 'arrow' && '→'}
-                {commentSettings.icon === 'checkmark' && '✓'}
-                {commentSettings.icon === 'x' && '✕'}
-                {commentSettings.icon === 'star' && '★'}
-                {commentSettings.icon === 'key' && '🔑'}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Highlight Sidebar */}
-        {tool === 'highlight' && (
-          <div
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: pdfDoc ? `${sidebarWidth}px` : '0',
-              right: '17px',
-              zIndex: 45,
-              backgroundColor: '#2a2a2a',
-              borderBottom: '1px solid #444',
-              padding: '15px 20px',
-              display: 'flex',
-              gap: '20px',
-              alignItems: 'center',
-              flexWrap: 'wrap',
-              animation: 'slideDown 0.3s ease-out',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
-            }}
-          >
-            {/* Lägen */}
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <span style={{ color: '#fff', fontSize: '0.9rem', fontWeight: 500 }}>{t('toolbar.mode', 'Läge')}:</span>
-              <button
-                onClick={() => setHighlightMode('rect')}
-                style={{
-                  padding: '8px 12px',
-                  backgroundColor: highlightMode === 'rect' ? '#ff6b35' : '#333',
-                  color: '#fff',
-                  border: highlightMode === 'rect' ? '1px solid #ff6b35' : '1px solid #555',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease'
-                }}
-              >
-                {t('toolbar.highlightRect', 'Markera yta')}
-              </button>
-              <button
-                onClick={() => setHighlightMode('freehand')}
-                style={{
-                  padding: '8px 12px',
-                  backgroundColor: highlightMode === 'freehand' ? '#ff6b35' : '#333',
-                  color: '#fff',
-                  border: highlightMode === 'freehand' ? '1px solid #ff6b35' : '1px solid #555',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease'
-                }}
-              >
-                {t('toolbar.highlightFreehand', 'Överstryk penna')}
-              </button>
-            </div>
-
-            {/* Färg */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <label style={{ color: '#fff', fontSize: '0.9rem', fontWeight: 500 }}>
-                {t('toolbar.highlightColor', 'Highlight-färg')}:
-              </label>
-              <input
-                type="color"
-                value={highlightSettings.color}
-                onChange={(e) => setHighlightSettings({ ...highlightSettings, color: e.target.value })}
-                style={{ width: '44px', height: '34px', border: '1px solid #555', background: '#222', cursor: 'pointer' }}
-              />
-              <input
-                type="text"
-                value={highlightSettings.color}
-                onChange={(e) => setHighlightSettings({ ...highlightSettings, color: e.target.value })}
-                style={{ width: '90px', padding: '6px 10px', background: '#333', color: '#fff', border: '1px solid #555', borderRadius: '5px', fontFamily: 'monospace' }}
-              />
-            </div>
-
-            {/* Opacitet */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <label style={{ color: '#fff', fontSize: '0.9rem', fontWeight: 500 }}>
-                {t('toolbar.opacity', 'Opacitet')}:
-              </label>
-              <input
-                type="range"
-                min="0.1"
-                max="0.95"
-                step="0.05"
-                value={highlightSettings.opacity}
-                onChange={(e) => setHighlightSettings({ ...highlightSettings, opacity: parseFloat(e.target.value) })}
-                style={{ accentColor: '#ff6b35' }}
-              />
-              <span style={{ color: '#fff', minWidth: '38px', textAlign: 'right' }}>{Math.round((highlightSettings.opacity || 0.35) * 100)}%</span>
-            </div>
-
-            {/* Stroke-bredd (för frihand) */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <label style={{ color: '#fff', fontSize: '0.9rem', fontWeight: 500 }}>
-                {t('toolbar.stroke', 'Bredd')}:
-              </label>
-              <input
-                type="range"
-                min="2"
-                max="48"
-                step="1"
-                value={highlightSettings.strokeWidth}
-                onChange={(e) => setHighlightSettings({ ...highlightSettings, strokeWidth: Math.max(2, Math.min(48, Number(e.target.value))) })}
-                style={{ accentColor: '#6b5bff', minWidth: '140px' }}
-              />
-              <span style={{ color: '#fff', minWidth: '44px', textAlign: 'right' }}>{highlightSettings.strokeWidth} px</span>
-            </div>
-          </div>
-        )}
-
-        {/* Eraser Sidebar */}
-        {tool === 'eraser' && (
-          <div
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: pdfDoc ? `${sidebarWidth}px` : '0',
-              right: '17px',
-              zIndex: 44,
-              backgroundColor: '#2a2a2a',
-              borderBottom: '1px solid #444',
-              padding: '15px 20px',
-              display: 'flex',
-              gap: '20px',
-              alignItems: 'center',
-              flexWrap: 'wrap',
-              animation: 'slideDown 0.3s ease-out',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <label style={{ color: '#fff', fontSize: '0.9rem', fontWeight: 500 }}>
-                {t('toolbar.stroke', 'Bredd')}:
-              </label>
-              <input
-                type="range"
-                min="4"
-                max="64"
-                step="1"
-                value={eraserSettings.size}
-                onChange={(e) => setEraserSettings({ ...eraserSettings, size: Math.max(4, Math.min(64, Number(e.target.value))) })}
-                style={{ accentColor: '#6b5bff', minWidth: '160px' }}
-              />
-              <span style={{ color: '#fff', minWidth: '44px', textAlign: 'right' }}>{eraserSettings.size} px</span>
-            </div>
-          </div>
-        )}
-
-        {/* Whiteout Settings Sidebar - Visas när whiteout-verktyget är aktivt */}
-        {tool === 'whiteout' && (
-          <div
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: pdfDoc ? `${sidebarWidth}px` : '0',
-              right: '17px',
-              zIndex: 10,
-              backgroundColor: '#2a2a2a',
-              borderBottom: '1px solid #444',
-              padding: '15px 20px',
-              display: 'flex',
-              gap: '30px',
-              alignItems: 'center',
-              flexWrap: 'wrap',
-              animation: 'slideDown 0.3s ease-out',
-              transition: 'top 0.3s ease',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
-            }}
-          >
-            <style>{`
-              @keyframes slideDown {
-                from {
-                  opacity: 0;
-                  transform: translateY(-10px);
-                }
-                to {
-                  opacity: 1;
-                  transform: translateY(0);
-                }
-              }
-            `}</style>
-
-            {/* Whiteout Color */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', position: 'relative' }}>
-              <label htmlFor="whiteout-color-picker" style={{ color: '#fff', fontSize: '0.9rem', fontWeight: '500', minWidth: '80px' }}>
-                {t('whiteoutSidebar.color', 'Färg')}:
-              </label>
-              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', position: 'relative' }}>
-                <div style={{ position: 'relative' }} data-whiteout-color-picker>
-                  <button
-                    onClick={() => setShowWhiteoutColorPalette(!showWhiteoutColorPalette)}
-                    style={{
-                      width: '50px',
-                      height: '35px',
-                      border: '2px solid #555',
-                      borderRadius: '5px',
-                      cursor: 'pointer',
-                      backgroundColor: whiteoutColor,
-                      transition: 'all 0.2s ease',
-                      boxShadow: showWhiteoutColorPalette ? '0 0 0 2px rgba(255, 107, 53, 0.5)' : 'none'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor = '#888';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = '#555';
-                    }}
-                    title={t('whiteoutSidebar.selectColor', 'Välj färg')}
-                  />
-                  {/* Dropdown med vanliga färger */}
-                  {showWhiteoutColorPalette && (
-                    <div
-                      data-whiteout-color-picker
-                      style={{
-                        position: 'absolute',
-                        top: '45px',
-                        left: '0',
-                        backgroundColor: '#2a2a2a',
-                        border: '1px solid #555',
-                        borderRadius: '8px',
-                        padding: '12px',
-                        zIndex: 1000,
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-                        display: 'flex',
-                        flexWrap: 'wrap',
-                        gap: '8px',
-                        width: '200px'
-                      }}
-                    >
-                      {[
-                        { nameKey: 'colors.white', color: '#FFFFFF' },
-                        { nameKey: 'colors.black', color: '#000000' },
-                        { nameKey: 'colors.red', color: '#FF0000' },
-                        { nameKey: 'colors.blue', color: '#0000FF' },
-                        { nameKey: 'colors.green', color: '#008000' },
-                        { nameKey: 'colors.yellow', color: '#FFFF00' },
-                        { nameKey: 'colors.orange', color: '#FF6B35' },
-                        { nameKey: 'colors.purple', color: '#800080' },
-                        { nameKey: 'colors.pink', color: '#FF69B4' },
-                        { nameKey: 'colors.gray', color: '#808080' },
-                        { nameKey: 'colors.darkBlue', color: '#000080' },
-                        { nameKey: 'colors.darkGreen', color: '#006400' }
-                      ].map((colorOption) => (
-                        <button
-                          key={colorOption.color}
-                          onClick={() => {
-                            setWhiteoutColor(colorOption.color);
-                            setShowWhiteoutColorPalette(false);
-                          }}
-                          title={t(colorOption.nameKey)}
-                          style={{
-                            width: '32px',
-                            height: '32px',
-                            backgroundColor: colorOption.color,
-                            border: whiteoutColor.toLowerCase() === colorOption.color.toLowerCase() 
-                              ? '3px solid #ff6b35' 
-                              : '2px solid #555',
-                            borderRadius: '5px',
-                            cursor: 'pointer',
-                            transition: 'all 0.2s ease',
-                            boxShadow: whiteoutColor.toLowerCase() === colorOption.color.toLowerCase()
-                              ? '0 0 0 2px rgba(255, 107, 53, 0.3)'
-                              : 'none'
-                          }}
-                          onMouseEnter={(e) => {
-                            if (whiteoutColor.toLowerCase() !== colorOption.color.toLowerCase()) {
-                              e.currentTarget.style.transform = 'scale(1.1)';
-                              e.currentTarget.style.borderColor = '#888';
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            if (whiteoutColor.toLowerCase() !== colorOption.color.toLowerCase()) {
-                              e.currentTarget.style.transform = 'scale(1)';
-                              e.currentTarget.style.borderColor = '#555';
-                            }
-                          }}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <input
-                  id="whiteout-color-picker"
-                  name="whiteout-color"
-                  type="color"
-                  value={whiteoutColor}
-                  onChange={(e) => setWhiteoutColor(e.target.value)}
-                  style={{
-                    width: '50px',
-                    height: '35px',
-                    border: '1px solid #555',
-                    borderRadius: '5px',
-                    cursor: 'pointer',
-                    backgroundColor: '#333'
-                  }}
-                />
-                <input
-                  id="whiteout-color-text"
-                  name="whiteout-color-hex"
-                  type="text"
-                  value={whiteoutColor}
-                  onChange={(e) => setWhiteoutColor(e.target.value)}
-                  style={{
-                    width: '90px',
-                    padding: '6px 10px',
-                    backgroundColor: '#333',
-                    color: '#fff',
-                    border: '1px solid #555',
-                    borderRadius: '5px',
-                    fontSize: '0.85rem',
-                    fontFamily: 'monospace'
-                  }}
-                />
-              </div>
-            </div>
-
-            {/* Preview */}
-            <div style={{ 
-              marginLeft: 'auto', 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '10px',
-              padding: '8px 15px',
-              backgroundColor: '#333',
-              borderRadius: '5px',
-              border: '1px solid #555'
-            }}>
-              <span style={{ color: '#888', fontSize: '0.85rem', marginRight: '5px' }}>
-                {t('whiteoutSidebar.preview', 'Förhandsgranskning')}:
-              </span>
-              <div
-                style={{
-                  width: '40px',
-                  height: '30px',
-                  backgroundColor: whiteoutColor,
-                  border: '2px solid #555',
-                  borderRadius: '3px',
-                  boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
-                }}
-              />
-            </div>
-          </div>
-        )}
-
-        {/* Shape Settings Sidebar - Visas när shape-verktyget är aktivt */}
-        {tool && tool.startsWith('shape') && (
-          <div
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: pdfDoc ? `${sidebarWidth}px` : '0',
-              right: '17px',
-              zIndex: 10,
-              backgroundColor: '#2a2a2a',
-              borderBottom: '1px solid #444',
-              padding: '15px 20px',
-              display: 'flex',
-              gap: '30px',
-              alignItems: 'center',
-              flexWrap: 'wrap',
-              animation: 'slideDown 0.3s ease-out',
-              transition: 'top 0.3s ease',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
-            }}
-          >
-            <style>{`
-              @keyframes slideDown {
-                from {
-                  opacity: 0;
-                  transform: translateY(-10px);
-                }
-                to {
-                  opacity: 1;
-                  transform: translateY(0);
-                }
-              }
-            `}</style>
-
-            {/* Shape Type */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <label style={{ color: '#fff', fontSize: '0.9rem', fontWeight: '500', minWidth: '80px' }}>
-                {t('shapeSidebar.type', 'Typ')}:
-              </label>
-              <select
-                value={shapeSettings.type}
-                onChange={(e) => {
-                  setShapeSettings({ ...shapeSettings, type: e.target.value });
-                  setTool(`shape-${e.target.value}`);
-                }}
-                style={{
-                  padding: '6px 10px',
-                  backgroundColor: '#333',
-                  color: '#fff',
-                  border: '1px solid #555',
-                  borderRadius: '5px',
-                  fontSize: '0.9rem',
-                  cursor: 'pointer',
-                  minWidth: '150px'
-                }}
-              >
-                <option value="rectangle">{t('toolbar.rectangle')}</option>
-                <option value="circle">{t('toolbar.circle')}</option>
-                <option value="line">{t('toolbar.line')}</option>
-                <option value="arrow">{t('toolbar.arrow')}</option>
-              </select>
-            </div>
-
-            {/* Stroke Color */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', position: 'relative' }}>
-              <label htmlFor="shape-stroke-color-picker" style={{ color: '#fff', fontSize: '0.9rem', fontWeight: '500', minWidth: '100px' }}>
-                {t('shapeSidebar.strokeColor', 'Linjefärg')}:
-              </label>
-              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', position: 'relative' }}>
-                <div style={{ position: 'relative' }} data-shape-stroke-color-picker>
-                  <button
-                    onClick={() => setShowShapeStrokeColorPalette(!showShapeStrokeColorPalette)}
-                    style={{
-                      width: '50px',
-                      height: '35px',
-                      border: '2px solid #555',
-                      borderRadius: '5px',
-                      cursor: 'pointer',
-                      backgroundColor: shapeSettings.strokeColor,
-                      transition: 'all 0.2s ease',
-                      boxShadow: showShapeStrokeColorPalette ? '0 0 0 2px rgba(255, 107, 53, 0.5)' : 'none'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor = '#888';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = '#555';
-                    }}
-                    title={t('shapeSidebar.selectColor', 'Välj färg')}
-                  />
-                  {/* Dropdown med vanliga färger */}
-                  {showShapeStrokeColorPalette && (
-                    <div
-                      data-shape-stroke-color-picker
-                      style={{
-                        position: 'absolute',
-                        top: '45px',
-                        left: '0',
-                        backgroundColor: '#2a2a2a',
-                        border: '1px solid #555',
-                        borderRadius: '8px',
-                        padding: '12px',
-                        zIndex: 1000,
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-                        display: 'flex',
-                        flexWrap: 'wrap',
-                        gap: '8px',
-                        width: '200px'
-                      }}
-                    >
-                      {[
-                        { nameKey: 'colors.black', color: '#000000' },
-                        { nameKey: 'colors.white', color: '#FFFFFF' },
-                        { nameKey: 'colors.red', color: '#FF0000' },
-                        { nameKey: 'colors.blue', color: '#0000FF' },
-                        { nameKey: 'colors.green', color: '#008000' },
-                        { nameKey: 'colors.yellow', color: '#FFFF00' },
-                        { nameKey: 'colors.orange', color: '#FF6B35' },
-                        { nameKey: 'colors.purple', color: '#800080' },
-                        { nameKey: 'colors.pink', color: '#FF69B4' },
-                        { nameKey: 'colors.gray', color: '#808080' },
-                        { nameKey: 'colors.darkBlue', color: '#000080' },
-                        { nameKey: 'colors.darkGreen', color: '#006400' }
-                      ].map((colorOption) => (
-                        <button
-                          key={colorOption.color}
-                          onClick={() => {
-                            setShapeSettings({ ...shapeSettings, strokeColor: colorOption.color });
-                            setShowShapeStrokeColorPalette(false);
-                          }}
-                          title={t(colorOption.nameKey)}
-                          style={{
-                            width: '32px',
-                            height: '32px',
-                            backgroundColor: colorOption.color,
-                            border: shapeSettings.strokeColor.toLowerCase() === colorOption.color.toLowerCase() 
-                              ? '3px solid #ff6b35' 
-                              : '2px solid #555',
-                            borderRadius: '5px',
-                            cursor: 'pointer',
-                            transition: 'all 0.2s ease',
-                            boxShadow: shapeSettings.strokeColor.toLowerCase() === colorOption.color.toLowerCase()
-                              ? '0 0 0 2px rgba(255, 107, 53, 0.3)'
-                              : 'none'
-                          }}
-                          onMouseEnter={(e) => {
-                            if (shapeSettings.strokeColor.toLowerCase() !== colorOption.color.toLowerCase()) {
-                              e.currentTarget.style.transform = 'scale(1.1)';
-                              e.currentTarget.style.borderColor = '#888';
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            if (shapeSettings.strokeColor.toLowerCase() !== colorOption.color.toLowerCase()) {
-                              e.currentTarget.style.transform = 'scale(1)';
-                              e.currentTarget.style.borderColor = '#555';
-                            }
-                          }}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <input
-                  id="shape-stroke-color-picker"
-                  name="shape-stroke-color"
-                  type="color"
-                  value={shapeSettings.strokeColor}
-                  onChange={(e) => setShapeSettings({ ...shapeSettings, strokeColor: e.target.value })}
-                  style={{
-                    width: '50px',
-                    height: '35px',
-                    border: '1px solid #555',
-                    borderRadius: '5px',
-                    cursor: 'pointer',
-                    backgroundColor: '#333'
-                  }}
-                />
-                <input
-                  id="shape-stroke-color-text"
-                  name="shape-stroke-color-hex"
-                  type="text"
-                  value={shapeSettings.strokeColor}
-                  onChange={(e) => setShapeSettings({ ...shapeSettings, strokeColor: e.target.value })}
-                  style={{
-                    width: '90px',
-                    padding: '6px 10px',
-                    backgroundColor: '#333',
-                    color: '#fff',
-                    border: '1px solid #555',
-                    borderRadius: '5px',
-                    fontSize: '0.85rem',
-                    fontFamily: 'monospace'
-                  }}
-                />
-              </div>
-            </div>
-
-            {/* Fill Color - Endast för rektangel och cirkel */}
-            {(shapeSettings.type === 'rectangle' || shapeSettings.type === 'circle') && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', position: 'relative' }}>
-                <label htmlFor="shape-fill-color-picker" style={{ color: '#fff', fontSize: '0.9rem', fontWeight: '500', minWidth: '100px' }}>
-                  {t('shapeSidebar.fillColor', 'Fyllningsfärg')}:
-                </label>
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', position: 'relative' }}>
-                  <div style={{ position: 'relative' }} data-shape-fill-color-picker>
-                    <button
-                      onClick={() => setShowShapeFillColorPalette(!showShapeFillColorPalette)}
-                      style={{
-                        width: '50px',
-                        height: '35px',
-                        border: '2px solid #555',
-                        borderRadius: '5px',
-                        cursor: 'pointer',
-                        backgroundColor: shapeSettings.fillColor === 'transparent' ? '#2a2a2a' : shapeSettings.fillColor,
-                        backgroundImage: shapeSettings.fillColor === 'transparent' 
-                          ? 'linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)'
-                          : 'none',
-                        backgroundSize: shapeSettings.fillColor === 'transparent' ? '10px 10px' : 'auto',
-                        backgroundPosition: shapeSettings.fillColor === 'transparent' ? '0 0, 0 5px, 5px -5px, -5px 0px' : 'auto',
-                        transition: 'all 0.2s ease',
-                        boxShadow: showShapeFillColorPalette ? '0 0 0 2px rgba(255, 107, 53, 0.5)' : 'none'
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.borderColor = '#888';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.borderColor = '#555';
-                      }}
-                      title={t('shapeSidebar.selectColor', 'Välj färg')}
-                    />
-                    {/* Dropdown med vanliga färger */}
-                    {showShapeFillColorPalette && (
-                      <div
-                        data-shape-fill-color-picker
-                        style={{
-                          position: 'absolute',
-                          top: '45px',
-                          left: '0',
-                          backgroundColor: '#2a2a2a',
-                          border: '1px solid #555',
-                          borderRadius: '8px',
-                          padding: '12px',
-                          zIndex: 1000,
-                          boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-                          display: 'flex',
-                          flexWrap: 'wrap',
-                          gap: '8px',
-                          width: '200px'
-                        }}
-                      >
-                        <button
-                          onClick={() => {
-                            setShapeSettings({ ...shapeSettings, fillColor: 'transparent' });
-                            setShowShapeFillColorPalette(false);
-                          }}
-                          title="Transparent"
-                          style={{
-                            width: '32px',
-                            height: '32px',
-                            backgroundColor: '#2a2a2a',
-                            backgroundImage: 'linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)',
-                            backgroundSize: '10px 10px',
-                            backgroundPosition: '0 0, 0 5px, 5px -5px, -5px 0px',
-                            border: shapeSettings.fillColor === 'transparent' 
-                              ? '3px solid #ff6b35' 
-                              : '2px solid #555',
-                            borderRadius: '5px',
-                            cursor: 'pointer',
-                            transition: 'all 0.2s ease',
-                            boxShadow: shapeSettings.fillColor === 'transparent'
-                              ? '0 0 0 2px rgba(255, 107, 53, 0.3)'
-                              : 'none'
-                          }}
-                        />
-                        {[
-                          { nameKey: 'colors.white', color: '#FFFFFF' },
-                          { nameKey: 'colors.black', color: '#000000' },
-                          { nameKey: 'colors.red', color: '#FF0000' },
-                          { nameKey: 'colors.blue', color: '#0000FF' },
-                          { nameKey: 'colors.green', color: '#008000' },
-                          { nameKey: 'colors.yellow', color: '#FFFF00' },
-                          { nameKey: 'colors.orange', color: '#FF6B35' },
-                          { nameKey: 'colors.purple', color: '#800080' },
-                          { nameKey: 'colors.pink', color: '#FF69B4' },
-                          { nameKey: 'colors.gray', color: '#808080' },
-                          { nameKey: 'colors.darkBlue', color: '#000080' },
-                          { nameKey: 'colors.darkGreen', color: '#006400' }
-                        ].map((colorOption) => (
-                          <button
-                            key={colorOption.color}
-                            onClick={() => {
-                              setShapeSettings({ ...shapeSettings, fillColor: colorOption.color });
-                              setShowShapeFillColorPalette(false);
-                            }}
-                            title={t(colorOption.nameKey)}
-                            style={{
-                              width: '32px',
-                              height: '32px',
-                              backgroundColor: colorOption.color,
-                              border: (shapeSettings.fillColor || 'transparent').toLowerCase() === colorOption.color.toLowerCase() 
-                                ? '3px solid #ff6b35' 
-                                : '2px solid #555',
-                              borderRadius: '5px',
-                              cursor: 'pointer',
-                              transition: 'all 0.2s ease',
-                              boxShadow: (shapeSettings.fillColor || 'transparent').toLowerCase() === colorOption.color.toLowerCase()
-                                ? '0 0 0 2px rgba(255, 107, 53, 0.3)'
-                                : 'none'
-                            }}
-                            onMouseEnter={(e) => {
-                              if ((shapeSettings.fillColor || 'transparent').toLowerCase() !== colorOption.color.toLowerCase()) {
-                                e.currentTarget.style.transform = 'scale(1.1)';
-                                e.currentTarget.style.borderColor = '#888';
-                              }
-                            }}
-                            onMouseLeave={(e) => {
-                              if ((shapeSettings.fillColor || 'transparent').toLowerCase() !== colorOption.color.toLowerCase()) {
-                                e.currentTarget.style.transform = 'scale(1)';
-                                e.currentTarget.style.borderColor = '#555';
-                              }
-                            }}
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                {/* Font Size */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <label htmlFor="font-size-input" style={{ color: 'var(--text-primary)', fontSize: '0.9rem', fontWeight: '500', minWidth: '80px' }}>
+                    {t('textSidebar.size')}:
+                  </label>
                   <input
-                    id="shape-fill-color-picker"
-                    name="shape-fill-color"
-                    type="color"
-                    value={shapeSettings.fillColor === 'transparent' ? '#FFFFFF' : shapeSettings.fillColor}
+                    id="font-size-input"
+                    name="font-size"
+                    ref={fontSizeInputRef}
+                    type="number"
+                    min="6"
+                    max="72"
+                    step="1"
+                    value={fontSizeInput}
                     onChange={(e) => {
-                      if (e.target.value === '#FFFFFF') {
-                        setShapeSettings({ ...shapeSettings, fillColor: 'transparent' });
+                      // Uppdatera bara lokal input-state, låt användaren skriva fritt
+                      setFontSizeInput(e.target.value);
+                    }}
+                    onBlur={(e) => {
+                      // När användaren lämnar fältet, validera och uppdatera textSettings
+                      const inputValue = e.target.value.trim();
+                      if (inputValue === '' || inputValue === '-') {
+                        // Om tomt, återställ till nuvarande värde
+                        setFontSizeInput(String(Math.round(textSettings.fontSizePt)));
+                        return;
+                      }
+                      const numValue = parseInt(inputValue, 10);
+                      if (isNaN(numValue) || numValue < 6 || numValue > 72) {
+                        // Ogiltigt värde, återställ till nuvarande värde
+                        setFontSizeInput(String(Math.round(textSettings.fontSizePt)));
                       } else {
-                        setShapeSettings({ ...shapeSettings, fillColor: e.target.value });
+                        // Giltigt värde, uppdatera textSettings
+                        setTextSettings({ ...textSettings, fontSizePt: numValue });
+                        setFontSizeInput(String(numValue));
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      // När användaren trycker Enter, validera och uppdatera
+                      if (e.key === 'Enter') {
+                        e.target.blur(); // Triggar onBlur som validerar
                       }
                     }}
                     style={{
-                      width: '50px',
-                      height: '35px',
-                      border: '1px solid #555',
+                      width: '70px',
+                      padding: '6px 10px',
+                      backgroundColor: 'var(--bg-card)',
+                      color: 'var(--text-primary)',
+                      border: '1px solid var(--border-color)',
                       borderRadius: '5px',
-                      cursor: 'pointer',
-                      backgroundColor: '#333'
+                      fontSize: '0.9rem'
                     }}
+                  />
+                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>pt</span>
+                </div>
+
+                {/* Font Family */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <label htmlFor="font-family-select" style={{ color: 'var(--text-primary)', fontSize: '0.9rem', fontWeight: '500', minWidth: '80px' }}>
+                    {t('textSidebar.fontFamily')}:
+                  </label>
+                  <select
+                    id="font-family-select"
+                    name="font-family"
+                    value={textSettings.fontFamily}
+                    onChange={(e) => setTextSettings({ ...textSettings, fontFamily: e.target.value })}
+                    style={{
+                      padding: '6px 10px',
+                      backgroundColor: 'var(--bg-card)',
+                      color: 'var(--text-primary)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '5px',
+                      fontSize: '0.9rem',
+                      cursor: 'pointer',
+                      minWidth: '150px'
+                    }}
+                  >
+                    <option value="Helvetica">Helvetica</option>
+                    <option value="Arial">Arial</option>
+                    <option value="Times-Roman">Times Roman</option>
+                    <option value="Courier">Courier</option>
+                    <option value="Georgia">Georgia</option>
+                    <option value="Verdana">Verdana</option>
+                  </select>
+                </div>
+
+                {/* Text Color */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', position: 'relative' }}>
+                  <label htmlFor="text-color-picker" style={{ color: 'var(--text-primary)', fontSize: '0.9rem', fontWeight: '500', minWidth: '80px' }}>
+                    {t('textSidebar.color')}:
+                  </label>
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center', position: 'relative' }}>
+                    <div style={{ position: 'relative' }} data-color-picker>
+                      <button
+                        onClick={() => setShowColorPalette(!showColorPalette)}
+                        style={{
+                          width: '50px',
+                          height: '35px',
+                          border: '2px solid var(--border-color)',
+                          borderRadius: '5px',
+                          cursor: 'pointer',
+                          backgroundColor: textSettings.color,
+                          transition: 'all 0.2s ease',
+                          boxShadow: showColorPalette ? '0 0 0 2px rgba(255, 107, 53, 0.5)' : 'none'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = 'var(--border-hover)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = 'var(--border-color)';
+                        }}
+                        title={t('textSidebar.selectColor')}
+                      />
+                      {/* Dropdown med vanliga färger */}
+                      {showColorPalette && (
+                        <div
+                          data-color-picker
+                          style={{
+                            position: 'absolute',
+                            top: '45px',
+                            left: '0',
+                            backgroundColor: 'var(--bg-card)',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: '8px',
+                            padding: '12px',
+                            zIndex: 1000,
+                            boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            gap: '8px',
+                            width: '200px'
+                          }}
+                        >
+                          {[
+                            { nameKey: 'colors.black', color: '#000000' },
+                            { nameKey: 'colors.white', color: '#FFFFFF' },
+                            { nameKey: 'colors.red', color: '#FF0000' },
+                            { nameKey: 'colors.blue', color: '#0000FF' },
+                            { nameKey: 'colors.green', color: '#008000' },
+                            { nameKey: 'colors.yellow', color: '#FFFF00' },
+                            { nameKey: 'colors.orange', color: '#FF6B35' },
+                            { nameKey: 'colors.purple', color: '#800080' },
+                            { nameKey: 'colors.pink', color: '#FF69B4' },
+                            { nameKey: 'colors.gray', color: '#808080' },
+                            { nameKey: 'colors.darkBlue', color: '#000080' },
+                            { nameKey: 'colors.darkGreen', color: '#006400' }
+                          ].map((colorOption) => (
+                            <button
+                              key={colorOption.color}
+                              onClick={() => {
+                                setTextSettings({ ...textSettings, color: colorOption.color });
+                                setShowColorPalette(false);
+                              }}
+                              title={t(colorOption.nameKey)}
+                              style={{
+                                width: '32px',
+                                height: '32px',
+                                backgroundColor: colorOption.color,
+                                border: textSettings.color.toLowerCase() === colorOption.color.toLowerCase()
+                                  ? '3px solid #ff6b35'
+                                  : '2px solid var(--border-color)',
+                                borderRadius: '5px',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s ease',
+                                boxShadow: textSettings.color.toLowerCase() === colorOption.color.toLowerCase()
+                                  ? '0 0 0 2px rgba(255, 107, 53, 0.3)'
+                                  : 'none'
+                              }}
+                              onMouseEnter={(e) => {
+                                if (textSettings.color.toLowerCase() !== colorOption.color.toLowerCase()) {
+                                  e.currentTarget.style.transform = 'scale(1.1)';
+                                  e.currentTarget.style.borderColor = 'var(--border-hover)';
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                if (textSettings.color.toLowerCase() !== colorOption.color.toLowerCase()) {
+                                  e.currentTarget.style.transform = 'scale(1)';
+                                  e.currentTarget.style.borderColor = 'var(--border-color)';
+                                }
+                              }}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <input
+                      id="text-color-picker"
+                      name="text-color"
+                      type="color"
+                      value={textSettings.color}
+                      onChange={(e) => setTextSettings({ ...textSettings, color: e.target.value })}
+                      style={{
+                        width: '50px',
+                        height: '35px',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '5px',
+                        cursor: 'pointer',
+                        backgroundColor: 'var(--bg-card)'
+                      }}
+                    />
+                    <input
+                      id="text-color-text"
+                      name="text-color-hex"
+                      type="text"
+                      value={textSettings.color}
+                      onChange={(e) => setTextSettings({ ...textSettings, color: e.target.value })}
+                      style={{
+                        width: '90px',
+                        padding: '6px 10px',
+                        backgroundColor: 'var(--bg-card)',
+                        color: 'var(--text-primary)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '5px',
+                        fontSize: '0.85rem',
+                        fontFamily: 'monospace'
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Font Weight & Style */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <label style={{ color: 'var(--text-primary)', fontSize: '0.9rem', fontWeight: '500', minWidth: '80px' }}>
+                    {t('textSidebar.style')}:
+                  </label>
+                  <div style={{ display: 'flex', gap: '5px' }}>
+                    <button
+                      onClick={() => {
+                        const newWeight = textSettings.fontWeight === 'bold' ? 'normal' : 'bold';
+                        setTextSettings({ ...textSettings, fontWeight: newWeight });
+                      }}
+                      style={{
+                        padding: '6px 12px',
+                        backgroundColor: textSettings.fontWeight === 'bold' ? '#ff6b35' : 'var(--bg-card)',
+                        color: textSettings.fontWeight === 'bold' ? '#fff' : 'var(--text-primary)',
+                        border: textSettings.fontWeight === 'bold' ? '1px solid #ff6b35' : '1px solid var(--border-color)',
+                        borderRadius: '5px',
+                        cursor: 'pointer',
+                        fontWeight: 'bold',
+                        fontSize: '0.9rem',
+                        transition: 'all 0.2s ease'
+                      }}
+                      title={t('textSidebar.bold')}
+                    >
+                      <strong>B</strong>
+                    </button>
+                    <button
+                      onClick={() => {
+                        const newStyle = textSettings.fontStyle === 'italic' ? 'normal' : 'italic';
+                        setTextSettings({ ...textSettings, fontStyle: newStyle });
+                      }}
+                      style={{
+                        padding: '6px 12px',
+                        backgroundColor: textSettings.fontStyle === 'italic' ? '#ff6b35' : 'var(--bg-card)',
+                        color: textSettings.fontStyle === 'italic' ? '#fff' : 'var(--text-primary)',
+                        border: textSettings.fontStyle === 'italic' ? '1px solid #ff6b35' : '1px solid var(--border-color)',
+                        borderRadius: '5px',
+                        cursor: 'pointer',
+                        fontStyle: 'italic',
+                        fontSize: '0.9rem',
+                        transition: 'all 0.2s ease'
+                      }}
+                      title={t('textSidebar.italic')}
+                    >
+                      <em>I</em>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Preview */}
+                <div style={{
+                  marginLeft: 'auto',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  padding: '8px 15px',
+                  backgroundColor: 'var(--bg-card)',
+                  borderRadius: '5px',
+                  border: '1px solid var(--border-color)'
+                }}>
+                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginRight: '5px' }}>{t('textSidebar.preview')}:</span>
+                  <span
+                    style={{
+                      fontSize: '14px', // Fast storlek oavsett textrutans fontstorlek
+                      fontFamily: textSettings.fontFamily,
+                      color: textSettings.color,
+                      fontWeight: textSettings.fontWeight,
+                      fontStyle: textSettings.fontStyle
+                    }}
+                  >
+                    Aa
+                  </span>
+                </div>
+
+                {/* Delete Button - pushed to right edge, always visible but disabled when nothing selected */}
+                <button
+                  onClick={handleDelete}
+                  disabled={!(selectedElement !== null && selectedType === 'text')}
+                  title={t('toolbar.delete', 'Ta bort')}
+                  style={{
+                    marginLeft: 'auto',
+                    padding: '8px 12px',
+                    backgroundColor: 'transparent',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '5px',
+                    cursor: selectedElement !== null && selectedType === 'text' ? 'pointer' : 'not-allowed',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'all 0.2s ease',
+                    opacity: selectedElement !== null && selectedType === 'text' ? 1 : 0.4
+                  }}
+                  onMouseEnter={(e) => {
+                    if (selectedElement !== null && selectedType === 'text') {
+                      e.currentTarget.style.backgroundColor = '#ff4444';
+                      e.currentTarget.style.borderColor = '#ff4444';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                    e.currentTarget.style.borderColor = 'var(--border-color)';
+                  }}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    <line x1="10" y1="11" x2="10" y2="17"></line>
+                    <line x1="14" y1="11" x2="14" y2="17"></line>
+                  </svg>
+                </button>
+              </div>
+            )}
+
+            {/* Link Settings Sidebar */}
+
+
+            {/* Comment Settings Sidebar - Visas när comment-verktyget är aktivt */}
+            {tool === 'comment' && (
+              <div
+                data-comment-sidebar
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: pdfDoc ? `${sidebarWidth}px` : '0',
+                  right: '17px',
+                  zIndex: 50,
+                  backgroundColor: 'var(--bg-secondary)',
+                  borderBottom: '1px solid var(--border-color)',
+                  padding: '15px 20px',
+                  display: 'flex',
+                  gap: '20px',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  animation: 'slideDown 0.3s ease-out',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+                }}
+              >
+                <style>{`
+              @keyframes slideDown {
+                from {
+                  opacity: 0;
+                  transform: translateY(-10px);
+                }
+                to {
+                  opacity: 1;
+                  transform: translateY(0);
+                }
+              }
+            `}</style>
+
+                {/* Delete comment button */}
+                <button
+                  onClick={() => {
+                    if (selectedElement !== null && selectedType === 'comment') {
+                      const confirmed = window.confirm(t('commentSidebar.confirmDelete', 'Vill du ta bort kommentaren?'));
+                      if (confirmed) {
+                        handleDelete();
+                        setTool(null); // stäng comment-läget när kommentaren tas bort via sidomenyn
+                      }
+                    }
+                  }}
+                  disabled={selectedElement === null || selectedType !== 'comment'}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    padding: '10px 14px',
+                    backgroundColor: '#c0392b',
+                    color: '#fff',
+                    border: '1px solid #a93226',
+                    borderRadius: '6px',
+                    cursor: selectedElement !== null && selectedType === 'comment' ? 'pointer' : 'not-allowed',
+                    opacity: selectedElement !== null && selectedType === 'comment' ? 1 : 0.5,
+                    minWidth: '44px',
+                    height: '42px',
+                    boxShadow: '0 2px 6px rgba(0,0,0,0.25)'
+                  }}
+                  title={t('commentSidebar.delete', 'Ta bort kommentar')}
+                >
+                  🗑️
+                </button>
+
+                {/* Comment Color */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', position: 'relative' }}>
+                  <label htmlFor="comment-color-picker" style={{ color: 'var(--text-primary)', fontSize: '0.9rem', fontWeight: '500', minWidth: '80px' }}>
+                    {t('commentSidebar.color')}:
+                  </label>
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center', position: 'relative' }}>
+                    <div style={{ position: 'relative' }} data-comment-color-picker>
+                      <button
+                        onClick={() => setShowCommentColorPalette(!showCommentColorPalette)}
+                        style={{
+                          width: '50px',
+                          height: '35px',
+                          border: '2px solid #555',
+                          borderRadius: '5px',
+                          cursor: 'pointer',
+                          backgroundColor: commentSettings.backgroundColor,
+                          transition: 'all 0.2s ease',
+                          boxShadow: showCommentColorPalette ? '0 0 0 2px rgba(255, 107, 53, 0.5)' : 'none'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = 'var(--border-hover)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = 'var(--border-color)';
+                        }}
+                        title={t('commentSidebar.color')}
+                      />
+                      {/* Dropdown med färger */}
+                      {showCommentColorPalette && (
+                        <div
+                          data-comment-color-picker
+                          style={{
+                            position: 'absolute',
+                            top: '45px',
+                            left: '0',
+                            backgroundColor: 'var(--bg-card)',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: '8px',
+                            padding: '12px',
+                            zIndex: 1000,
+                            boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            gap: '8px',
+                            width: '200px'
+                          }}
+                        >
+                          {[
+                            { color: '#FFD700', name: 'Gul' },
+                            { color: '#FF6B35', name: 'Orange' },
+                            { color: '#FF4444', name: 'Röd' },
+                            { color: '#FF00FF', name: 'Magenta' },
+                            { color: '#4488FF', name: 'Blå' },
+                            { color: '#00DD55', name: 'Lime grön' }
+                          ].map((colorOption) => (
+                            <button
+                              key={colorOption.color}
+                              onClick={() => {
+                                setCommentSettings({ ...commentSettings, backgroundColor: colorOption.color });
+                                setShowCommentColorPalette(false);
+                                // Uppdatera även vald kommentar om en är markerad
+                                if (selectedElement !== null && selectedType === 'comment') {
+                                  const newBoxes = [...commentBoxes];
+                                  newBoxes[selectedElement] = {
+                                    ...newBoxes[selectedElement],
+                                    backgroundColor: colorOption.color
+                                  };
+                                  setCommentBoxes(newBoxes);
+                                  saveToHistory(null, null, null, null, newBoxes);
+                                }
+                              }}
+                              title={colorOption.name}
+                              style={{
+                                width: '32px',
+                                height: '32px',
+                                backgroundColor: colorOption.color,
+                                border: commentSettings.backgroundColor.toLowerCase() === colorOption.color.toLowerCase()
+                                  ? '3px solid #ff6b35'
+                                  : '2px solid #555',
+                                borderRadius: '5px',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s ease',
+                                boxShadow: commentSettings.backgroundColor.toLowerCase() === colorOption.color.toLowerCase()
+                                  ? '0 0 0 2px rgba(255, 107, 53, 0.3)'
+                                  : 'none'
+                              }}
+                              onMouseEnter={(e) => {
+                                if (commentSettings.backgroundColor.toLowerCase() !== colorOption.color.toLowerCase()) {
+                                  e.currentTarget.style.transform = 'scale(1.1)';
+                                  e.currentTarget.style.borderColor = '#888';
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                if (commentSettings.backgroundColor.toLowerCase() !== colorOption.color.toLowerCase()) {
+                                  e.currentTarget.style.transform = 'scale(1)';
+                                  e.currentTarget.style.borderColor = 'var(--border-color)';
+                                }
+                              }}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <input
+                      id="comment-color-picker"
+                      name="comment-color"
+                      type="color"
+                      value={commentSettings.backgroundColor}
+                      onChange={(e) => {
+                        const newColor = e.target.value;
+                        setCommentSettings({ ...commentSettings, backgroundColor: newColor });
+                        // Uppdatera även vald kommentar om en är markerad
+                        if (selectedElement !== null && selectedType === 'comment') {
+                          const newBoxes = [...commentBoxes];
+                          newBoxes[selectedElement] = { ...newBoxes[selectedElement], backgroundColor: newColor };
+                          setCommentBoxes(newBoxes);
+                          saveToHistory(null, null, null, null, newBoxes);
+                        }
+                      }}
+                      style={{
+                        width: '50px',
+                        height: '35px',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '5px',
+                        cursor: 'pointer',
+                        backgroundColor: 'var(--bg-card)'
+                      }}
+                    />
+                    <input
+                      id="comment-color-text"
+                      name="comment-color-hex"
+                      type="text"
+                      value={commentSettings.backgroundColor}
+                      onChange={(e) => {
+                        const newColor = e.target.value;
+                        setCommentSettings({ ...commentSettings, backgroundColor: newColor });
+                        // Uppdatera även vald kommentar om en är markerad
+                        if (selectedElement !== null && selectedType === 'comment') {
+                          const newBoxes = [...commentBoxes];
+                          newBoxes[selectedElement] = { ...newBoxes[selectedElement], backgroundColor: newColor };
+                          setCommentBoxes(newBoxes);
+                        }
+                      }}
+                      onBlur={() => {
+                        // Spara till history när användaren är klar med att skriva
+                        if (selectedElement !== null && selectedType === 'comment') {
+                          saveToHistory(null, null, null, null, commentBoxes);
+                        }
+                      }}
+                      style={{
+                        width: '90px',
+                        padding: '6px 10px',
+                        backgroundColor: 'var(--bg-card)',
+                        color: 'var(--text-primary)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '5px',
+                        fontSize: '0.85rem',
+                        fontFamily: 'monospace'
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Icon Selection */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <label style={{ color: 'var(--text-primary)', fontSize: '0.9rem', fontWeight: '500', minWidth: '80px' }}>
+                    {t('commentSidebar.icon')}:
+                  </label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                    {[
+                      { type: 'speech-bubble', label: t('commentSidebar.speechBubble', 'Pratbubbla'), path: <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /> },
+                      { type: 'chevron-right', label: t('commentSidebar.chevronRight', 'Piljuspets'), path: <path d="M6 4l12 8-12 8" /> },
+                      { type: 'arrow-right', label: t('commentSidebar.arrowRight', 'Pil höger'), path: <path d="M5 12h14M12 5l7 7-7 7" /> },
+                      { type: 'check', label: t('commentSidebar.check', 'Bock'), path: <polyline points="20 6 9 17 4 12" /> },
+                      { type: 'circle', label: t('commentSidebar.circle', 'Cirkel'), path: <circle cx="12" cy="12" r="9" /> },
+                      { type: 'cross', label: t('commentSidebar.cross', 'Kryss'), path: <path d="M18 6L6 18M6 6l12 12" /> },
+                      { type: 'up-arrow', label: t('commentSidebar.upArrow', 'Pil upp'), path: <path d="M12 19V5M5 12l7-7 7 7" /> },
+                      { type: 'triangle', label: t('commentSidebar.triangle', 'Varning'), path: <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4" /> }, // Simplified warning triangle
+                      { type: 'note', label: t('commentSidebar.note', 'Notis'), path: <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /> },
+                      { type: 'paragraph', label: t('commentSidebar.paragraph', 'Paragraf'), path: <path d="M13 4v16M17 4v16M19 4H9.5a4.5 4.5 0 0 0 0 9H13" /> },
+                      { type: 'question', label: t('commentSidebar.question', 'Frågetecken'), path: <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3M12 17h.01" /> },
+                      { type: 'star', label: t('commentSidebar.star', 'Stjärna'), path: <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /> },
+                      { type: 'key', label: t('commentSidebar.key', 'Nyckel'), path: <path d="M22,18V22H18V19H15V16H12L9.74,13.74C9.19,13.91 8.61,14 8,14A6,6 0 0,1 2,8A6,6 0 0,1 8,2A6,6 0 0,1 14,8C14,8.61 13.91,9.19 13.74,9.74L22,18M7,5A2,2 0 0,0 5,7A2,2 0 0,0 7,9A2,2 0 0,0 9,7A2,2 0 0,0 7,5Z" /> }
+                    ].map((item) => (
+                      <button
+                        key={item.type}
+                        onClick={() => {
+                          setCommentSettings({ ...commentSettings, icon: item.type });
+                          if (selectedElement !== null && selectedType === 'comment') {
+                            const newBoxes = [...commentBoxes];
+                            newBoxes[selectedElement] = { ...newBoxes[selectedElement], icon: item.type };
+                            setCommentBoxes(newBoxes);
+                            saveToHistory(null, null, null, null, newBoxes);
+                          }
+                        }}
+                        style={{
+                          width: '35px',
+                          height: '35px',
+                          backgroundColor: commentSettings.icon === item.type ? '#ff6b35' : 'var(--bg-card)',
+                          border: commentSettings.icon === item.type ? '2px solid #ff6b35' : '1px solid var(--border-color)',
+                          borderRadius: '5px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          padding: '6px',
+                          transition: 'all 0.2s ease',
+                          flexShrink: 0
+                        }}
+                        title={item.label}
+                        onMouseEnter={(e) => {
+                          if (commentSettings.icon !== item.type) {
+                            e.currentTarget.style.backgroundColor = 'var(--bg-secondary)';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (commentSettings.icon !== item.type) {
+                            e.currentTarget.style.backgroundColor = 'var(--bg-card)';
+                          }
+                        }}
+                      >
+                        <svg
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke={commentSettings.icon === item.type ? '#fff' : 'var(--text-primary)'}
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          style={{ width: '100%', height: '100%' }}
+                        >
+                          {item.path}
+                        </svg>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Preview */}
+                <div style={{
+                  marginLeft: 'auto',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  padding: '8px 15px',
+                  backgroundColor: 'var(--bg-card)',
+                  borderRadius: '5px',
+                  border: '1px solid var(--border-color)'
+                }}>
+                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginRight: '5px' }}>
+                    {t('commentSidebar.preview')}:
+                  </span>
+                  <div
+                    style={{
+                      width: '24px',
+                      height: '24px',
+                      backgroundColor: commentSettings.backgroundColor,
+                      border: '2px solid var(--border-color)',
+                      borderRadius: '2px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '14px',
+                      transform: 'rotate(-2deg)'
+                    }}
+                  >
+                    {commentSettings.icon === 'speech-bubble' && '💬'}
+                    {commentSettings.icon === 'arrow' && '→'}
+                    {commentSettings.icon === 'checkmark' && '✓'}
+                    {commentSettings.icon === 'x' && '✕'}
+                    {commentSettings.icon === 'star' && '★'}
+                    {commentSettings.icon === 'key' && '🔑'}
+                  </div>
+                </div>
+
+                {/* Delete Button - pushed to right edge, always visible but disabled when nothing selected */}
+                <button
+                  onClick={handleDelete}
+                  disabled={!(selectedElement !== null && selectedType === 'comment')}
+                  title={t('toolbar.delete', 'Ta bort')}
+                  style={{
+                    marginLeft: 'auto',
+                    padding: '8px 12px',
+                    backgroundColor: 'transparent',
+                    border: '1px solid #555',
+                    borderRadius: '5px',
+                    cursor: selectedElement !== null && selectedType === 'comment' ? 'pointer' : 'not-allowed',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'all 0.2s ease',
+                    opacity: selectedElement !== null && selectedType === 'comment' ? 1 : 0.4
+                  }}
+                  onMouseEnter={(e) => {
+                    if (selectedElement !== null && selectedType === 'comment') {
+                      e.currentTarget.style.backgroundColor = '#ff4444';
+                      e.currentTarget.style.borderColor = '#ff4444';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                    e.currentTarget.style.borderColor = 'var(--border-color)';
+                  }}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    <line x1="10" y1="11" x2="10" y2="17"></line>
+                    <line x1="14" y1="11" x2="14" y2="17"></line>
+                  </svg>
+                </button>
+              </div>
+            )}
+
+            {/* Highlight Sidebar */}
+            {tool === 'highlight' && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: pdfDoc ? `${sidebarWidth}px` : '0',
+                  right: '17px',
+                  zIndex: 45,
+                  backgroundColor: 'var(--bg-secondary)',
+                  borderBottom: '1px solid var(--border-color)',
+                  padding: '15px 20px',
+                  display: 'flex',
+                  gap: '20px',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  animation: 'slideDown 0.3s ease-out',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+                }}
+              >
+                {/* Lägen */}
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <span style={{ color: 'var(--text-primary)', fontSize: '0.9rem', fontWeight: 500 }}>{t('toolbar.mode', 'Läge')}:</span>
+                  <button
+                    onClick={() => setHighlightMode('rect')}
+                    style={{
+                      padding: '8px 12px',
+                      backgroundColor: highlightMode === 'rect' ? '#ff6b35' : 'var(--bg-card)',
+                      color: highlightMode === 'rect' ? '#fff' : 'var(--text-primary)',
+                      border: highlightMode === 'rect' ? '1px solid #ff6b35' : '1px solid var(--border-color)',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    {t('toolbar.highlightRect', 'Markera yta')}
+                  </button>
+                  <button
+                    onClick={() => setHighlightMode('freehand')}
+                    style={{
+                      padding: '8px 12px',
+                      backgroundColor: highlightMode === 'freehand' ? '#ff6b35' : 'var(--bg-card)',
+                      color: highlightMode === 'freehand' ? '#fff' : 'var(--text-primary)',
+                      border: highlightMode === 'freehand' ? '1px solid #ff6b35' : '1px solid var(--border-color)',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    {t('toolbar.highlightFreehand', 'Överstryk penna')}
+                  </button>
+                </div>
+
+                {/* Färg */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <label style={{ color: 'var(--text-primary)', fontSize: '0.9rem', fontWeight: 500 }}>
+                    {t('toolbar.highlightColor', 'Highlight-färg')}:
+                  </label>
+                  <input
+                    type="color"
+                    value={highlightSettings.color}
+                    onChange={(e) => setHighlightSettings({ ...highlightSettings, color: e.target.value })}
+                    style={{ width: '44px', height: '34px', border: '1px solid var(--border-color)', background: 'var(--bg-card)', cursor: 'pointer' }}
                   />
                   <input
-                    id="shape-fill-color-text"
-                    name="shape-fill-color-hex"
                     type="text"
-                    value={shapeSettings.fillColor}
-                    onChange={(e) => setShapeSettings({ ...shapeSettings, fillColor: e.target.value })}
-                    placeholder="transparent"
-                    style={{
-                      width: '90px',
-                      padding: '6px 10px',
-                      backgroundColor: '#333',
-                      color: '#fff',
-                      border: '1px solid #555',
-                      borderRadius: '5px',
-                      fontSize: '0.85rem',
-                      fontFamily: 'monospace'
-                    }}
+                    value={highlightSettings.color}
+                    onChange={(e) => setHighlightSettings({ ...highlightSettings, color: e.target.value })}
+                    style={{ width: '90px', padding: '6px 10px', background: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '5px', fontFamily: 'monospace' }}
                   />
+                </div>
+
+                {/* Opacitet */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <label style={{ color: 'var(--text-primary)', fontSize: '0.9rem', fontWeight: 500 }}>
+                    {t('toolbar.opacity', 'Opacitet')}:
+                  </label>
+                  <input
+                    type="range"
+                    min="0.1"
+                    max="0.95"
+                    step="0.05"
+                    value={highlightSettings.opacity}
+                    onChange={(e) => setHighlightSettings({ ...highlightSettings, opacity: parseFloat(e.target.value) })}
+                    style={{ accentColor: '#ff6b35' }}
+                  />
+                  <span style={{ color: 'var(--text-primary)', minWidth: '38px', textAlign: 'right' }}>{Math.round((highlightSettings.opacity || 0.35) * 100)}%</span>
+                </div>
+
+                {/* Stroke-bredd (för frihand) */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <label style={{ color: 'var(--text-primary)', fontSize: '0.9rem', fontWeight: 500 }}>
+                    {t('toolbar.stroke', 'Bredd')}:
+                  </label>
+                  <input
+                    type="range"
+                    min="2"
+                    max="48"
+                    step="1"
+                    value={highlightSettings.strokeWidth}
+                    onChange={(e) => setHighlightSettings({ ...highlightSettings, strokeWidth: Math.max(2, Math.min(48, Number(e.target.value))) })}
+                    style={{ accentColor: '#6b5bff', minWidth: '140px' }}
+                  />
+                  <span style={{ color: 'var(--text-primary)', minWidth: '44px', textAlign: 'right' }}>{highlightSettings.strokeWidth} px</span>
+                </div>
+
+                {/* Clear All Highlights Button - pushed to right edge, disabled when no highlights */}
+                <button
+                  onClick={() => {
+                    if (highlightStrokes.length > 0) {
+                      setHighlightStrokes([]);
+                      saveToHistory(null, null, null, null, null, []);
+                    }
+                  }}
+                  disabled={highlightStrokes.length === 0}
+                  title={t('toolbar.clearHighlights', 'Rensa markeringar')}
+                  style={{
+                    marginLeft: 'auto',
+                    padding: '8px 12px',
+                    backgroundColor: 'transparent',
+                    border: '1px solid #555',
+                    borderRadius: '5px',
+                    cursor: highlightStrokes.length > 0 ? 'pointer' : 'not-allowed',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'all 0.2s ease',
+                    opacity: highlightStrokes.length > 0 ? 1 : 0.4
+                  }}
+                  onMouseEnter={(e) => {
+                    if (highlightStrokes.length > 0) {
+                      e.currentTarget.style.backgroundColor = '#ff4444';
+                      e.currentTarget.style.borderColor = '#ff4444';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                    e.currentTarget.style.borderColor = '#555';
+                  }}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    <line x1="10" y1="11" x2="10" y2="17"></line>
+                    <line x1="14" y1="11" x2="14" y2="17"></line>
+                  </svg>
+                </button>
+              </div>
+            )}
+
+            {/* Eraser Sidebar */}
+            {tool === 'eraser' && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: pdfDoc ? `${sidebarWidth}px` : '0',
+                  right: '17px',
+                  zIndex: 44,
+                  backgroundColor: 'var(--bg-secondary)',
+                  borderBottom: '1px solid var(--border-color)',
+                  padding: '15px 20px',
+                  display: 'flex',
+                  gap: '20px',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  animation: 'slideDown 0.3s ease-out',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <label style={{ color: 'var(--text-primary)', fontSize: '0.9rem', fontWeight: 500 }}>
+                    {t('toolbar.stroke', 'Bredd')}:
+                  </label>
+                  <input
+                    type="range"
+                    min="4"
+                    max="64"
+                    step="1"
+                    value={eraserSettings.size}
+                    onChange={(e) => setEraserSettings({ ...eraserSettings, size: Math.max(4, Math.min(64, Number(e.target.value))) })}
+                    style={{ accentColor: '#6b5bff', minWidth: '160px' }}
+                  />
+                  <span style={{ color: 'var(--text-primary)', minWidth: '44px', textAlign: 'right' }}>{eraserSettings.size} px</span>
                 </div>
               </div>
             )}
 
-            {/* Stroke Width */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <label htmlFor="shape-stroke-width" style={{ color: '#fff', fontSize: '0.9rem', fontWeight: '500', minWidth: '100px' }}>
-                {t('shapeSidebar.strokeWidth', 'Linjetjocklek')}:
-              </label>
-              <input
-                id="shape-stroke-width"
-                name="shape-stroke-width"
-                type="number"
-                min="1"
-                max="20"
-                step="1"
-                value={shapeSettings.strokeWidth}
-                onChange={(e) => {
-                  const width = parseInt(e.target.value, 10);
-                  if (!isNaN(width) && width >= 1 && width <= 20) {
-                    setShapeSettings({ ...shapeSettings, strokeWidth: width });
-                  }
-                }}
+            {/* Whiteout Settings Sidebar - Visas när whiteout-verktyget är aktivt */}
+            {tool === 'whiteout' && (
+              <div
                 style={{
-                  width: '70px',
-                  padding: '6px 10px',
-                  backgroundColor: '#333',
-                  color: '#fff',
-                  border: '1px solid #555',
-                  borderRadius: '5px',
-                  fontSize: '0.9rem'
+                  position: 'absolute',
+                  top: 0,
+                  left: pdfDoc ? `${sidebarWidth}px` : '0',
+                  right: '17px',
+                  zIndex: 10,
+                  backgroundColor: 'var(--bg-secondary)',
+                  borderBottom: '1px solid var(--border-color)',
+                  padding: '15px 20px',
+                  display: 'flex',
+                  gap: '30px',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  animation: 'slideDown 0.3s ease-out',
+                  transition: 'top 0.3s ease',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
                 }}
-              />
-              <span style={{ color: '#888', fontSize: '0.85rem' }}>px</span>
-            </div>
-
-            {/* Preview */}
-            <div style={{ 
-              marginLeft: 'auto', 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '10px',
-              padding: '8px 15px',
-              backgroundColor: '#333',
-              borderRadius: '5px',
-              border: '1px solid #555'
-            }}>
-              <span style={{ color: '#888', fontSize: '0.85rem', marginRight: '5px' }}>
-                {t('shapeSidebar.preview', 'Förhandsgranskning')}:
-              </span>
-              <svg
-                width="60"
-                height="40"
-                style={{ display: 'block' }}
               >
-                {shapeSettings.type === 'rectangle' && (
-                  <rect
-                    x="5"
-                    y="5"
-                    width="50"
-                    height="30"
-                    fill={shapeSettings.fillColor || 'transparent'}
-                    stroke={shapeSettings.strokeColor}
-                    strokeWidth={shapeSettings.strokeWidth}
-                  />
-                )}
-                {shapeSettings.type === 'circle' && (
-                  <ellipse
-                    cx="30"
-                    cy="20"
-                    rx="22"
-                    ry="15"
-                    fill={shapeSettings.fillColor || 'transparent'}
-                    stroke={shapeSettings.strokeColor}
-                    strokeWidth={shapeSettings.strokeWidth}
-                  />
-                )}
-                {shapeSettings.type === 'line' && (
-                  <line
-                    x1="5"
-                    y1="35"
-                    x2="55"
-                    y2="5"
-                    stroke={shapeSettings.strokeColor}
-                    strokeWidth={shapeSettings.strokeWidth}
-                  />
-                )}
-                {shapeSettings.type === 'arrow' && (
-                  <g>
-                    <line
-                      x1="5"
-                      y1="35"
-                      x2="55"
-                      y2="5"
-                      stroke={shapeSettings.strokeColor}
-                      strokeWidth={shapeSettings.strokeWidth}
-                    />
-                    <polygon
-                      points="55,5 45,8 45,2"
-                      fill={shapeSettings.strokeColor}
-                    />
-                  </g>
-                )}
-              </svg>
-            </div>
-          </div>
-        )}
+                <style>{`
+              @keyframes slideDown {
+                from {
+                  opacity: 0;
+                  transform: translateY(-10px);
+                }
+                to {
+                  opacity: 1;
+                  transform: translateY(0);
+                }
+              }
+            `}</style>
 
-        {/* PDF Viewer Area - med margin-left för att göra plats för sidebar */}
-        <div style={{ 
-          display: 'flex', 
-          flexDirection: 'column', 
-          flex: 1, 
-          height: '100%', 
-          position: 'relative', 
-          overflow: 'hidden',
-          marginLeft: pdfDoc ? `${sidebarWidth}px` : '0' // Gör plats för sidebar
-        }}>
-      {/* PDF Viewer - Konstant padding-top så canvas inte hoppar när sidebar visas/döljs */}
-      <div
-        ref={containerRef}
-        className={
-          tool === 'text' || tool === 'edit-text' ? 'text-cursor' : 
-          (
-            tool === 'whiteout' ||
-            tool === 'patch' ||
-            (tool && tool.startsWith('shape')) ||
-            (tool === 'highlight' && highlightMode === 'rect')
-              ? 'crosshair-cursor'
-              : ''
-          )
-        }
-        style={{
-          flex: 1,
-          overflowX: 'auto',
-          overflowY: (navMode === 'paged' && !canScrollCurrentPage) ? 'hidden' : 'auto',
-          position: 'relative',
-          backgroundColor: '#1a1a1a',
-          cursor: tool === 'pan' ? (isPanning ? 'grabbing' : 'grab') : undefined,
-          scrollSnapType: navMode === 'paged' ? 'y mandatory' : 'none'
-        }}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-      >
-        {pdfDoc ? (
-          <div style={{ 
-            position: 'relative', 
-            paddingTop: '100px', // Fast värde så canvas inte flyttas när sidebar ändras (text-sidebar är högst)
-            paddingLeft: '20px',
-            paddingRight: '20px',
-            paddingBottom: '20px',
-            minWidth: 'max-content',
-            boxSizing: 'border-box',
-            display: effectiveLayout === 'double' ? 'grid' : 'flex',
-            gridTemplateColumns: effectiveLayout === 'double' ? 'repeat(2, max-content)' : undefined,
-            flexDirection: effectiveLayout === 'double' ? undefined : 'column',
-            justifyContent: 'center',
-            alignItems: effectiveLayout === 'double' ? 'start' : 'center',
-            gap: '20px' // Mellanrum mellan sidor / mellan grid items
-          }}>
-            {/* Rendera alla sidor */}
-            {pdfPages.map((page, index) => {
-              const pageNum = index + 1;
-              const viewport = pageViewports[index];
-              if (!viewport) return null;
-              
-              return (
-                <div
-                  key={pageNum}
-                  ref={(el) => {
-                    if (el) pageContainerRefs.current[pageNum] = el;
-                  }}
+                {/* Whiteout Color */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', position: 'relative' }}>
+                  <label htmlFor="whiteout-color-picker" style={{ color: 'var(--text-primary)', fontSize: '0.9rem', fontWeight: '500', minWidth: '80px' }}>
+                    {t('whiteoutSidebar.color', 'Färg')}:
+                  </label>
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center', position: 'relative' }}>
+                    <div style={{ position: 'relative' }} data-whiteout-color-picker>
+                      <button
+                        onClick={() => setShowWhiteoutColorPalette(!showWhiteoutColorPalette)}
+                        style={{
+                          width: '50px',
+                          height: '35px',
+                          border: '2px solid var(--border-color)',
+                          borderRadius: '5px',
+                          cursor: 'pointer',
+                          backgroundColor: whiteoutColor,
+                          transition: 'all 0.2s ease',
+                          boxShadow: showWhiteoutColorPalette ? '0 0 0 2px rgba(255, 107, 53, 0.5)' : 'none'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = 'var(--border-hover)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = 'var(--border-color)';
+                        }}
+                        title={t('whiteoutSidebar.selectColor', 'Välj färg')}
+                      />
+                      {/* Dropdown med vanliga färger */}
+                      {showWhiteoutColorPalette && (
+                        <div
+                          data-whiteout-color-picker
+                          style={{
+                            position: 'absolute',
+                            top: '45px',
+                            left: '0',
+                            backgroundColor: 'var(--bg-card)',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: '8px',
+                            padding: '12px',
+                            zIndex: 1000,
+                            boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            gap: '8px',
+                            width: '200px'
+                          }}
+                        >
+                          {[
+                            { nameKey: 'colors.white', color: '#FFFFFF' },
+                            { nameKey: 'colors.black', color: '#000000' },
+                            { nameKey: 'colors.red', color: '#FF0000' },
+                            { nameKey: 'colors.blue', color: '#0000FF' },
+                            { nameKey: 'colors.green', color: '#008000' },
+                            { nameKey: 'colors.yellow', color: '#FFFF00' },
+                            { nameKey: 'colors.orange', color: '#FF6B35' },
+                            { nameKey: 'colors.purple', color: '#800080' },
+                            { nameKey: 'colors.pink', color: '#FF69B4' },
+                            { nameKey: 'colors.gray', color: '#808080' },
+                            { nameKey: 'colors.darkBlue', color: '#000080' },
+                            { nameKey: 'colors.darkGreen', color: '#006400' }
+                          ].map((colorOption) => (
+                            <button
+                              key={colorOption.color}
+                              onClick={() => {
+                                setWhiteoutColor(colorOption.color);
+                                setShowWhiteoutColorPalette(false);
+                              }}
+                              title={t(colorOption.nameKey)}
+                              style={{
+                                width: '32px',
+                                height: '32px',
+                                backgroundColor: colorOption.color,
+                                border: whiteoutColor.toLowerCase() === colorOption.color.toLowerCase()
+                                  ? '3px solid #ff6b35'
+                                  : '2px solid var(--border-color)',
+                                borderRadius: '5px',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s ease',
+                                boxShadow: whiteoutColor.toLowerCase() === colorOption.color.toLowerCase()
+                                  ? '0 0 0 2px rgba(255, 107, 53, 0.3)'
+                                  : 'none'
+                              }}
+                              onMouseEnter={(e) => {
+                                if (whiteoutColor.toLowerCase() !== colorOption.color.toLowerCase()) {
+                                  e.currentTarget.style.transform = 'scale(1.1)';
+                                  e.currentTarget.style.borderColor = '#888';
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                if (whiteoutColor.toLowerCase() !== colorOption.color.toLowerCase()) {
+                                  e.currentTarget.style.transform = 'scale(1)';
+                                  e.currentTarget.style.borderColor = 'var(--border-color)';
+                                }
+                              }}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <input
+                      id="whiteout-color-picker"
+                      name="whiteout-color"
+                      type="color"
+                      value={whiteoutColor}
+                      onChange={(e) => setWhiteoutColor(e.target.value)}
+                      style={{
+                        width: '50px',
+                        height: '35px',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '5px',
+                        cursor: 'pointer',
+                        backgroundColor: 'var(--bg-card)'
+                      }}
+                    />
+                    <input
+                      id="whiteout-color-text"
+                      name="whiteout-color-hex"
+                      type="text"
+                      value={whiteoutColor}
+                      onChange={(e) => setWhiteoutColor(e.target.value)}
+                      style={{
+                        width: '90px',
+                        padding: '6px 10px',
+                        backgroundColor: 'var(--bg-card)',
+                        color: 'var(--text-primary)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '5px',
+                        fontSize: '0.85rem',
+                        fontFamily: 'monospace'
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Preview */}
+                <div style={{
+                  marginLeft: 'auto',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  padding: '8px 15px',
+                  backgroundColor: 'var(--bg-card)',
+                  borderRadius: '5px',
+                  border: '1px solid var(--border-color)'
+                }}>
+                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginRight: '5px' }}>
+                    {t('whiteoutSidebar.preview', 'Förhandsgranskning')}:
+                  </span>
+                  <div
+                    style={{
+                      width: '40px',
+                      height: '30px',
+                      backgroundColor: whiteoutColor,
+                      border: '2px solid #555',
+                      borderRadius: '3px',
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                    }}
+                  />
+                </div>
+
+                {/* Delete Button - pushed to right edge, always visible but disabled when nothing selected */}
+                <button
+                  onClick={handleDelete}
+                  disabled={!(selectedElement !== null && selectedType === 'whiteout')}
+                  title={t('toolbar.delete', 'Ta bort')}
                   style={{
-                    position: 'relative',
-                    display: 'inline-block',
-                    marginBottom: effectiveLayout === 'double' ? '0' : (index < pdfPages.length - 1 ? '20px' : '0'),
-                    scrollSnapAlign: navMode === 'paged' ? 'center' : 'none'
+                    marginLeft: 'auto',
+                    padding: '8px 12px',
+                    backgroundColor: 'transparent',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '5px',
+                    cursor: selectedElement !== null && selectedType === 'whiteout' ? 'pointer' : 'not-allowed',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'all 0.2s ease',
+                    opacity: selectedElement !== null && selectedType === 'whiteout' ? 1 : 0.4
+                  }}
+                  onMouseEnter={(e) => {
+                    if (selectedElement !== null && selectedType === 'whiteout') {
+                      e.currentTarget.style.backgroundColor = '#ff4444';
+                      e.currentTarget.style.borderColor = '#ff4444';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                    e.currentTarget.style.borderColor = 'var(--border-color)';
                   }}
                 >
-                  <canvas
-                    ref={(el) => {
-                      if (el) canvasRefs.current[pageNum] = el;
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    <line x1="10" y1="11" x2="10" y2="17"></line>
+                    <line x1="14" y1="11" x2="14" y2="17"></line>
+                  </svg>
+                </button>
+              </div>
+            )}
+
+            {/* Shape Settings Sidebar - Visas när shape-verktyget är aktivt (men INTE för cross/check) */}
+            {tool && tool.startsWith('shape') && tool !== 'shape-cross' && tool !== 'shape-check' && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: pdfDoc ? `${sidebarWidth}px` : '0',
+                  right: '17px',
+                  zIndex: 10,
+                  backgroundColor: 'var(--bg-secondary)',
+                  borderBottom: '1px solid var(--border-color)',
+                  padding: '15px 20px',
+                  display: 'flex',
+                  gap: '30px',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  animation: 'slideDown 0.3s ease-out',
+                  transition: 'top 0.3s ease',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+                }}
+              >
+                <style>{`
+              @keyframes slideDown {
+                from {
+                  opacity: 0;
+                  transform: translateY(-10px);
+                }
+                to {
+                  opacity: 1;
+                  transform: translateY(0);
+                }
+              }
+            `}</style>
+
+                {/* Shape Type */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <label style={{ color: 'var(--text-primary)', fontSize: '0.9rem', fontWeight: '500', minWidth: '80px' }}>
+                    {t('shapeSidebar.type', 'Typ')}:
+                  </label>
+                  <select
+                    value={shapeSettings.type}
+                    onChange={(e) => {
+                      setShapeSettings({ ...shapeSettings, type: e.target.value });
+                      setTool(`shape-${e.target.value}`);
                     }}
                     style={{
-                      border: '1px solid #ccc',
-                      boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                      display: 'block',
-                      backgroundColor: 'white',
-                      cursor:
-                        (tool === 'highlight' && highlightMode === 'freehand') || tool === 'eraser'
-                          ? 'none'
-                          : (tool === 'highlight' && highlightMode === 'rect')
-                            ? 'crosshair'
-                            : (tool === 'whiteout' || tool === 'patch' || (tool && tool.startsWith('shape')))
-                              ? 'crosshair'
-                              : 'default'
-                    }}
-                  />
-                  
-                  {/* Render whiteout boxes för denna sida */}
-                  {whiteoutBoxes
-                    .filter((whiteoutBox) => {
-                      const boxPageIndex = whiteoutBox.pageIndex !== undefined ? whiteoutBox.pageIndex : 0;
-                      return boxPageIndex === index;
-                    })
-                    .map((whiteoutBox, localIndex) => {
-                      // Hitta global index
-                      const globalIndex = whiteoutBoxes.findIndex(wb => wb === whiteoutBox);
-                return (
-                  <WhiteoutBox
-                    key={`whiteout-${globalIndex}`}
-                    whiteoutBox={whiteoutBox}
-                    zoom={zoom}
-                    isSelected={selectedElement === globalIndex && selectedType === 'whiteout'}
-                    tool={tool}
-                    whiteoutBoxIndex={globalIndex}
-                    onUpdate={(updated) => {
-                      const newBoxes = [...whiteoutBoxes];
-                      newBoxes[globalIndex] = updated;
-                      setWhiteoutBoxes(newBoxes);
-                      saveToHistory(null, newBoxes, null, null, commentBoxes);
-                    }}
-                    onResizeStart={(handle, e) => {
-                      e.stopPropagation();
-                      const pageNum = whiteoutBox.pageIndex !== undefined ? whiteoutBox.pageIndex + 1 : currentPage;
-                      const canvasRef = canvasRefs.current[pageNum];
-                      if (!canvasRef) return;
-                      const canvasRect = canvasRef.getBoundingClientRect();
-                      const x = e.clientX - canvasRect.left;
-                      const y = e.clientY - canvasRect.top;
-                      setIsResizing(true);
-                      setResizeHandle(handle);
-                      setDragStart({ x, y });
-                      setOriginalRect(whiteoutBox.rect);
-                    }}
-                    onRotationStart={(e) => {
-                      e.stopPropagation();
-                      const pageNum = whiteoutBox.pageIndex !== undefined ? whiteoutBox.pageIndex + 1 : currentPage;
-                      const canvasRef = canvasRefs.current[pageNum];
-                      if (!canvasRef) return;
-                      const canvasRect = canvasRef.getBoundingClientRect();
-                      const mouseX = e.clientX - canvasRect.left;
-                      const mouseY = e.clientY - canvasRect.top;
-
-                      let actualRectPx = rectPtToPx(whiteoutBox.rect, zoom);
-                      const container = document.querySelector(`[data-whiteout-container-index="${globalIndex}"]`);
-                      if (container) {
-                        const rect = container.getBoundingClientRect();
-                        actualRectPx = {
-                          x: rect.left - canvasRect.left,
-                          y: rect.top - canvasRect.top,
-                          width: rect.width,
-                          height: rect.height
-                        };
-                      }
-
-                      const centerX = actualRectPx.x + actualRectPx.width / 2;
-                      const centerY = actualRectPx.y + actualRectPx.height / 2;
-
-                      setSelectedElement(globalIndex);
-                      setSelectedType('whiteout');
-                      setIsRotating(true);
-                      setRotationStart({ x: mouseX, y: mouseY, centerX, centerY });
-                      setInitialRotation(whiteoutBox.rotation || 0);
-                    }}
-                  />
-                );
-              })}
-                  
-                  {/* Render patch boxes för denna sida */}
-                  {patchBoxes
-                    .filter((patchBox) => {
-                      const boxPageIndex = patchBox.pageIndex !== undefined ? patchBox.pageIndex : 0;
-                      return boxPageIndex === index;
-                    })
-                    .map((patchBox, localIndex) => {
-                      const globalIndex = patchBoxes.findIndex(pb => pb === patchBox);
-                      // Hämta källsidan om den finns, annars använd targetsidan (för bakåtkompatibilitet)
-                      const sourcePageIndex = patchBox.sourcePageIndex !== undefined 
-                        ? patchBox.sourcePageIndex 
-                        : (patchBox.pageIndex !== undefined ? patchBox.pageIndex : index);
-                      const sourcePage = pdfPages[sourcePageIndex] || null;
-                      return (
-                        <PatchBox
-                          key={`patch-${pageNum}-${globalIndex}`}
-                          patchBox={patchBox}
-                          zoom={zoom}
-                          pdfPage={page} // Target page (där patchen visas)
-                          sourcePdfPage={sourcePage} // Source page (där patchen kopieras från)
-                          pdfPageNum={pageNum}
-                          isSelected={selectedElement === globalIndex && selectedType === 'patch'}
-                          tool={tool}
-                          onUpdate={(updated) => {
-                            const newBoxes = [...patchBoxes];
-                            newBoxes[globalIndex] = updated;
-                            setPatchBoxes(newBoxes);
-                            saveToHistory(null, null, newBoxes, null, commentBoxes);
-                          }}
-                        />
-                      );
-                    })}
-
-                  {/* Frihand-highlight strokes för denna sida */}
-                  <svg
-                    width={viewport.width}
-                    height={viewport.height}
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      pointerEvents: 'none',
-                      overflow: 'visible'
+                      padding: '6px 10px',
+                      backgroundColor: 'var(--bg-card)',
+                      color: 'var(--text-primary)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '5px',
+                      fontSize: '0.9rem',
+                      cursor: 'pointer',
+                      minWidth: '150px'
                     }}
                   >
-                    {highlightStrokes
-                      .filter((stroke) => stroke.pageIndex === index)
-                      .map((stroke, strokeIdx) => {
-                        const pointsPx = (stroke.points || []).map((p) => pointPtToPx(p, zoom));
-                        if (pointsPx.length < 2) return null;
-                        const d = pointsPx
-                          .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`)
-                          .join(' ');
-                        return (
-                          <path
-                            key={`stroke-${pageNum}-${strokeIdx}`}
-                            d={d}
-                            fill="none"
-                            stroke={hexToRgba(stroke.color || '#FFEB3B', stroke.opacity ?? 0.35)}
-                            strokeWidth={(stroke.strokeWidth || 12) * zoom}
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            opacity={stroke.opacity ?? 0.35}
-                          />
-                        );
-                      })}
-                    {/* Live-stroke preview */}
-                    {currentStroke && currentStroke.pageIndex === index && currentStroke.points?.length > 1 && (
-                      <path
-                        d={currentStroke.points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')}
-                        fill="none"
-                        stroke={hexToRgba(currentStroke.color || '#FFEB3B', currentStroke.opacity ?? 0.35)}
-                        strokeWidth={(currentStroke.strokeWidth || 12) * zoom}
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        opacity={currentStroke.opacity ?? 0.35}
+                    <option value="rectangle">{t('toolbar.rectangle')}</option>
+                    <option value="circle">{t('toolbar.circle')}</option>
+                    <option value="line">{t('toolbar.line')}</option>
+                    <option value="arrow">{t('toolbar.arrow')}</option>
+                  </select>
+                </div>
+
+                {/* Stroke Color */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', position: 'relative' }}>
+                  <label htmlFor="shape-stroke-color-picker" style={{ color: 'var(--text-primary)', fontSize: '0.9rem', fontWeight: '500', minWidth: '100px' }}>
+                    {t('shapeSidebar.strokeColor', 'Linjefärg')}:
+                  </label>
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center', position: 'relative' }}>
+                    <div style={{ position: 'relative' }} data-shape-stroke-color-picker>
+                      <button
+                        onClick={() => setShowShapeStrokeColorPalette(!showShapeStrokeColorPalette)}
+                        style={{
+                          width: '50px',
+                          height: '35px',
+                          border: '2px solid var(--border-color)',
+                          borderRadius: '5px',
+                          cursor: 'pointer',
+                          backgroundColor: shapeSettings.strokeColor,
+                          transition: 'all 0.2s ease',
+                          boxShadow: showShapeStrokeColorPalette ? '0 0 0 2px rgba(255, 107, 53, 0.5)' : 'none'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = 'var(--border-hover)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = 'var(--border-color)';
+                        }}
+                        title={t('shapeSidebar.selectColor', 'Välj färg')}
+                      />
+                      {/* Dropdown med vanliga färger */}
+                      {showShapeStrokeColorPalette && (
+                        <div
+                          data-shape-stroke-color-picker
+                          style={{
+                            position: 'absolute',
+                            top: '45px',
+                            left: '0',
+                            backgroundColor: 'var(--bg-card)',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: '8px',
+                            padding: '12px',
+                            zIndex: 1000,
+                            boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            gap: '8px',
+                            width: '200px'
+                          }}
+                        >
+                          {[
+                            { nameKey: 'colors.black', color: '#000000' },
+                            { nameKey: 'colors.white', color: '#FFFFFF' },
+                            { nameKey: 'colors.red', color: '#FF0000' },
+                            { nameKey: 'colors.blue', color: '#0000FF' },
+                            { nameKey: 'colors.green', color: '#008000' },
+                            { nameKey: 'colors.yellow', color: '#FFFF00' },
+                            { nameKey: 'colors.orange', color: '#FF6B35' },
+                            { nameKey: 'colors.purple', color: '#800080' },
+                            { nameKey: 'colors.pink', color: '#FF69B4' },
+                            { nameKey: 'colors.gray', color: '#808080' },
+                            { nameKey: 'colors.darkBlue', color: '#000080' },
+                            { nameKey: 'colors.darkGreen', color: '#006400' }
+                          ].map((colorOption) => (
+                            <button
+                              key={colorOption.color}
+                              onClick={() => {
+                                setShapeSettings({ ...shapeSettings, strokeColor: colorOption.color });
+                                setShowShapeStrokeColorPalette(false);
+                              }}
+                              title={t(colorOption.nameKey)}
+                              style={{
+                                width: '32px',
+                                height: '32px',
+                                backgroundColor: colorOption.color,
+                                border: shapeSettings.strokeColor.toLowerCase() === colorOption.color.toLowerCase()
+                                  ? '3px solid #ff6b35'
+                                  : '2px solid var(--border-color)',
+                                borderRadius: '5px',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s ease',
+                                boxShadow: shapeSettings.strokeColor.toLowerCase() === colorOption.color.toLowerCase()
+                                  ? '0 0 0 2px rgba(255, 107, 53, 0.3)'
+                                  : 'none'
+                              }}
+                              onMouseEnter={(e) => {
+                                if (shapeSettings.strokeColor.toLowerCase() !== colorOption.color.toLowerCase()) {
+                                  e.currentTarget.style.transform = 'scale(1.1)';
+                                  e.currentTarget.style.borderColor = 'var(--border-hover)';
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                if (shapeSettings.strokeColor.toLowerCase() !== colorOption.color.toLowerCase()) {
+                                  e.currentTarget.style.transform = 'scale(1)';
+                                  e.currentTarget.style.borderColor = 'var(--border-color)';
+                                }
+                              }}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <input
+                      id="shape-stroke-color-picker"
+                      name="shape-stroke-color"
+                      type="color"
+                      value={shapeSettings.strokeColor}
+                      onChange={(e) => setShapeSettings({ ...shapeSettings, strokeColor: e.target.value })}
+                      style={{
+                        width: '50px',
+                        height: '35px',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '5px',
+                        cursor: 'pointer',
+                        backgroundColor: 'var(--bg-card)'
+                      }}
+                    />
+                    <input
+                      id="shape-stroke-color-text"
+                      name="shape-stroke-color-hex"
+                      type="text"
+                      value={shapeSettings.strokeColor}
+                      onChange={(e) => setShapeSettings({ ...shapeSettings, strokeColor: e.target.value })}
+                      style={{
+                        width: '90px',
+                        padding: '6px 10px',
+                        backgroundColor: 'var(--bg-card)',
+                        color: 'var(--text-primary)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '5px',
+                        fontSize: '0.85rem',
+                        fontFamily: 'monospace'
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Fill Color - Endast för rektangel och cirkel */}
+                {(shapeSettings.type === 'rectangle' || shapeSettings.type === 'circle') && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', position: 'relative' }}>
+                    <label htmlFor="shape-fill-color-picker" style={{ color: 'var(--text-primary)', fontSize: '0.9rem', fontWeight: '500', minWidth: '100px' }}>
+                      {t('shapeSidebar.fillColor', 'Fyllningsfärg')}:
+                    </label>
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center', position: 'relative' }}>
+                      <div style={{ position: 'relative' }} data-shape-fill-color-picker>
+                        <button
+                          onClick={() => setShowShapeFillColorPalette(!showShapeFillColorPalette)}
+                          style={{
+                            width: '50px',
+                            height: '35px',
+                            border: '2px solid var(--border-color)',
+                            borderRadius: '5px',
+                            cursor: 'pointer',
+                            backgroundColor: shapeSettings.fillColor === 'transparent' ? 'var(--bg-card)' : shapeSettings.fillColor,
+                            backgroundImage: shapeSettings.fillColor === 'transparent'
+                              ? 'linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)'
+                              : 'none',
+                            backgroundSize: shapeSettings.fillColor === 'transparent' ? '10px 10px' : 'auto',
+                            backgroundPosition: shapeSettings.fillColor === 'transparent' ? '0 0, 0 5px, 5px -5px, -5px 0px' : 'auto',
+                            transition: 'all 0.2s ease',
+                            boxShadow: showShapeFillColorPalette ? '0 0 0 2px rgba(255, 107, 53, 0.5)' : 'none'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.borderColor = 'var(--border-hover)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.borderColor = 'var(--border-color)';
+                          }}
+                          title={t('shapeSidebar.selectColor', 'Välj färg')}
+                        />
+                        {/* Dropdown med vanliga färger */}
+                        {showShapeFillColorPalette && (
+                          <div
+                            data-shape-fill-color-picker
+                            style={{
+                              position: 'absolute',
+                              top: '45px',
+                              left: '0',
+                              backgroundColor: 'var(--bg-card)',
+                              border: '1px solid var(--border-color)',
+                              borderRadius: '8px',
+                              padding: '12px',
+                              zIndex: 1000,
+                              boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+                              display: 'flex',
+                              flexWrap: 'wrap',
+                              gap: '8px',
+                              width: '200px'
+                            }}
+                          >
+                            <button
+                              onClick={() => {
+                                setShapeSettings({ ...shapeSettings, fillColor: 'transparent' });
+                                setShowShapeFillColorPalette(false);
+                              }}
+                              title="Transparent"
+                              style={{
+                                width: '32px',
+                                height: '32px',
+                                backgroundColor: 'var(--bg-card)',
+                                backgroundImage: 'linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)',
+                                backgroundSize: '10px 10px',
+                                backgroundPosition: '0 0, 0 5px, 5px -5px, -5px 0px',
+                                border: shapeSettings.fillColor === 'transparent'
+                                  ? '3px solid #ff6b35'
+                                  : '2px solid var(--border-color)',
+                                borderRadius: '5px',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s ease',
+                                boxShadow: shapeSettings.fillColor === 'transparent'
+                                  ? '0 0 0 2px rgba(255, 107, 53, 0.3)'
+                                  : 'none'
+                              }}
+                            />
+                            {[
+                              { nameKey: 'colors.white', color: '#FFFFFF' },
+                              { nameKey: 'colors.black', color: '#000000' },
+                              { nameKey: 'colors.red', color: '#FF0000' },
+                              { nameKey: 'colors.blue', color: '#0000FF' },
+                              { nameKey: 'colors.green', color: '#008000' },
+                              { nameKey: 'colors.yellow', color: '#FFFF00' },
+                              { nameKey: 'colors.orange', color: '#FF6B35' },
+                              { nameKey: 'colors.purple', color: '#800080' },
+                              { nameKey: 'colors.pink', color: '#FF69B4' },
+                              { nameKey: 'colors.gray', color: '#808080' },
+                              { nameKey: 'colors.darkBlue', color: '#000080' },
+                              { nameKey: 'colors.darkGreen', color: '#006400' }
+                            ].map((colorOption) => (
+                              <button
+                                key={colorOption.color}
+                                onClick={() => {
+                                  setShapeSettings({ ...shapeSettings, fillColor: colorOption.color });
+                                  setShowShapeFillColorPalette(false);
+                                }}
+                                title={t(colorOption.nameKey)}
+                                style={{
+                                  width: '32px',
+                                  height: '32px',
+                                  backgroundColor: colorOption.color,
+                                  border: (shapeSettings.fillColor || 'transparent').toLowerCase() === colorOption.color.toLowerCase()
+                                    ? '3px solid #ff6b35'
+                                    : '2px solid var(--border-color)',
+                                  borderRadius: '5px',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.2s ease',
+                                  boxShadow: (shapeSettings.fillColor || 'transparent').toLowerCase() === colorOption.color.toLowerCase()
+                                    ? '0 0 0 2px rgba(255, 107, 53, 0.3)'
+                                    : 'none'
+                                }}
+                                onMouseEnter={(e) => {
+                                  if ((shapeSettings.fillColor || 'transparent').toLowerCase() !== colorOption.color.toLowerCase()) {
+                                    e.currentTarget.style.transform = 'scale(1.1)';
+                                    e.currentTarget.style.borderColor = 'var(--border-hover)';
+                                  }
+                                }}
+                                onMouseLeave={(e) => {
+                                  if ((shapeSettings.fillColor || 'transparent').toLowerCase() !== colorOption.color.toLowerCase()) {
+                                    e.currentTarget.style.transform = 'scale(1)';
+                                    e.currentTarget.style.borderColor = 'var(--border-color)';
+                                  }
+                                }}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <input
+                        id="shape-fill-color-picker"
+                        name="shape-fill-color"
+                        type="color"
+                        value={shapeSettings.fillColor === 'transparent' ? '#FFFFFF' : shapeSettings.fillColor}
+                        onChange={(e) => {
+                          if (e.target.value === '#FFFFFF') {
+                            setShapeSettings({ ...shapeSettings, fillColor: 'transparent' });
+                          } else {
+                            setShapeSettings({ ...shapeSettings, fillColor: e.target.value });
+                          }
+                        }}
+                        style={{
+                          width: '50px',
+                          height: '35px',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '5px',
+                          cursor: 'pointer',
+                          backgroundColor: 'var(--bg-card)'
+                        }}
+                      />
+                      <input
+                        id="shape-fill-color-text"
+                        name="shape-fill-color-hex"
+                        type="text"
+                        value={shapeSettings.fillColor}
+                        onChange={(e) => setShapeSettings({ ...shapeSettings, fillColor: e.target.value })}
+                        placeholder="transparent"
+                        style={{
+                          width: '90px',
+                          padding: '6px 10px',
+                          backgroundColor: 'var(--bg-card)',
+                          color: 'var(--text-primary)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '5px',
+                          fontSize: '0.85rem',
+                          fontFamily: 'monospace'
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Stroke Width */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <label htmlFor="shape-stroke-width" style={{ color: 'var(--text-primary)', fontSize: '0.9rem', fontWeight: '500', minWidth: '100px' }}>
+                    {t('shapeSidebar.strokeWidth', 'Linjetjocklek')}:
+                  </label>
+                  <input
+                    id="shape-stroke-width"
+                    name="shape-stroke-width"
+                    type="number"
+                    min="1"
+                    max="20"
+                    step="1"
+                    value={shapeSettings.strokeWidth}
+                    onChange={(e) => {
+                      const width = parseInt(e.target.value, 10);
+                      if (!isNaN(width) && width >= 1 && width <= 20) {
+                        setShapeSettings({ ...shapeSettings, strokeWidth: width });
+                      }
+                    }}
+                    style={{
+                      width: '70px',
+                      padding: '6px 10px',
+                      backgroundColor: 'var(--bg-card)',
+                      color: 'var(--text-primary)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '5px',
+                      fontSize: '0.9rem'
+                    }}
+                  />
+                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>px</span>
+                </div>
+
+                {/* Preview */}
+                <div style={{
+                  marginLeft: 'auto',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  padding: '8px 15px',
+                  backgroundColor: 'var(--bg-card)',
+                  borderRadius: '5px',
+                  border: '1px solid var(--border-color)'
+                }}>
+                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginRight: '5px' }}>
+                    {t('shapeSidebar.preview', 'Förhandsgranskning')}:
+                  </span>
+                  <svg
+                    width="60"
+                    height="40"
+                    style={{ display: 'block' }}
+                  >
+                    {shapeSettings.type === 'rectangle' && (
+                      <rect
+                        x="5"
+                        y="5"
+                        width="50"
+                        height="30"
+                        fill={shapeSettings.fillColor || 'transparent'}
+                        stroke={shapeSettings.strokeColor}
+                        strokeWidth={shapeSettings.strokeWidth}
                       />
                     )}
-                    {/* Cursor preview ring för frihand highlight */}
-                    {highlightCursor && highlightCursor.pageNum === pageNum && highlightMode === 'freehand' && tool === 'highlight' && (
-                      <circle
-                        cx={highlightCursor.x}
-                        cy={highlightCursor.y}
-                        r={(highlightSettings.strokeWidth / 2) * zoom}
-                        fill="none"
-                        stroke={hexToRgba(highlightSettings.color, 0.9)}
-                        strokeWidth={2}
-                        opacity={0.9}
+                    {shapeSettings.type === 'circle' && (
+                      <ellipse
+                        cx="30"
+                        cy="20"
+                        rx="22"
+                        ry="15"
+                        fill={shapeSettings.fillColor || 'transparent'}
+                        stroke={shapeSettings.strokeColor}
+                        strokeWidth={shapeSettings.strokeWidth}
                       />
                     )}
-                    {/* Cursor preview ring för eraser */}
-                    {eraserCursor && eraserCursor.pageNum === pageNum && tool === 'eraser' && (
-                      <circle
-                        cx={eraserCursor.x}
-                        cy={eraserCursor.y}
-                        r={(eraserSettings.size / 2) * zoom}
-                        fill="none"
-                        stroke={eraserCursorColor}
-                        strokeWidth={2}
-                        opacity={0.9}
+                    {shapeSettings.type === 'line' && (
+                      <line
+                        x1="5"
+                        y1="35"
+                        x2="55"
+                        y2="5"
+                        stroke={shapeSettings.strokeColor}
+                        strokeWidth={shapeSettings.strokeWidth}
                       />
+                    )}
+                    {shapeSettings.type === 'arrow' && (
+                      <g>
+                        <line
+                          x1="5"
+                          y1="35"
+                          x2="55"
+                          y2="5"
+                          stroke={shapeSettings.strokeColor}
+                          strokeWidth={shapeSettings.strokeWidth}
+                        />
+                        <polygon
+                          points="55,5 45,8 45,2"
+                          fill={shapeSettings.strokeColor}
+                        />
+                      </g>
                     )}
                   </svg>
-                  
-                  {/* Render text boxes för denna sida */}
-                  {textBoxes
-                    .filter((textBox) => {
-                      const boxPageIndex = textBox.pageIndex !== undefined ? textBox.pageIndex : 0;
-                      return boxPageIndex === index;
-                    })
-                    .map((textBox, localIndex) => {
-                      const globalIndex = textBoxes.findIndex(tb => tb === textBox);
+                </div>
+
+                {/* Delete Button - pushed to right edge, always visible but disabled when nothing selected */}
+                <button
+                  onClick={handleDelete}
+                  disabled={!(selectedElement !== null && selectedType === 'shape')}
+                  title={t('toolbar.delete', 'Ta bort')}
+                  style={{
+                    marginLeft: 'auto',
+                    padding: '8px 12px',
+                    backgroundColor: 'transparent',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '5px',
+                    cursor: selectedElement !== null && selectedType === 'shape' ? 'pointer' : 'not-allowed',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'all 0.2s ease',
+                    opacity: selectedElement !== null && selectedType === 'shape' ? 1 : 0.4
+                  }}
+                  onMouseEnter={(e) => {
+                    if (selectedElement !== null && selectedType === 'shape') {
+                      e.currentTarget.style.backgroundColor = '#ff4444';
+                      e.currentTarget.style.borderColor = '#ff4444';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                    e.currentTarget.style.borderColor = 'var(--border-color)';
+                  }}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    <line x1="10" y1="11" x2="10" y2="17"></line>
+                    <line x1="14" y1="11" x2="14" y2="17"></line>
+                  </svg>
+                </button>
+              </div>
+            )}
+
+            {/* Pen Settings Sidebar */}
+            {tool === 'pen' && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: pdfDoc ? `${sidebarWidth}px` : '0',
+                  right: '17px',
+                  zIndex: 10,
+                  backgroundColor: 'var(--bg-secondary)',
+                  borderBottom: '1px solid var(--border-color)',
+                  padding: '15px 20px',
+                  display: 'flex',
+                  gap: '30px',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  animation: 'slideDown 0.3s ease-out',
+                  transition: 'top 0.3s ease',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+                }}
+              >
+                {/* Color Picker */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', position: 'relative' }}>
+                  <label htmlFor="pen-color-picker" style={{ color: 'var(--text-primary)', fontSize: '0.9rem', fontWeight: '500', minWidth: '40px' }}>
+                    {t('penSidebar.color', 'Färg')}:
+                  </label>
+                  <input
+                    id="pen-color-picker"
+                    type="color"
+                    value={penSettings.color}
+                    onChange={(e) => setPenSettings({ ...penSettings, color: e.target.value })}
+                    style={{
+                      width: '50px',
+                      height: '35px',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '5px',
+                      cursor: 'pointer',
+                      backgroundColor: 'var(--bg-card)'
+                    }}
+                  />
+                </div>
+
+                {/* Stroke Width */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <label htmlFor="pen-stroke-width" style={{ color: 'var(--text-primary)', fontSize: '0.9rem', fontWeight: '500' }}>
+                    {t('penSidebar.size', 'Storlek')}:
+                  </label>
+                  <input
+                    id="pen-stroke-width"
+                    type="range"
+                    min="1"
+                    max="40"
+                    step="1"
+                    value={penSettings.strokeWidth}
+                    onChange={(e) => setPenSettings({ ...penSettings, strokeWidth: parseInt(e.target.value, 10) })}
+                    style={{ width: '100px', cursor: 'pointer' }}
+                  />
+                  <span style={{ color: 'var(--text-primary)', minWidth: '30px', textAlign: 'right' }}>{penSettings.strokeWidth}px</span>
+                </div>
+
+                {/* Opacity */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <label htmlFor="pen-opacity" style={{ color: 'var(--text-primary)', fontSize: '0.9rem', fontWeight: '500' }}>
+                    {t('penSidebar.opacity', 'Opacitet')}:
+                  </label>
+                  <input
+                    id="pen-opacity"
+                    type="range"
+                    min="0.1"
+                    max="1.0"
+                    step="0.05"
+                    value={penSettings.opacity}
+                    onChange={(e) => setPenSettings({ ...penSettings, opacity: parseFloat(e.target.value) })}
+                    style={{ width: '100px', cursor: 'pointer' }}
+                  />
+                  <span style={{ color: 'var(--text-primary)', minWidth: '40px', textAlign: 'right' }}>{Math.round(penSettings.opacity * 100)}%</span>
+                </div>
+
+                {/* Clear Button */}
+                <button
+                  onClick={() => {
+                    if (window.confirm(t('penSidebar.confirmClear', 'Är du säker på att du vill rensa alla pennstreck?'))) {
+                      const newStrokes = [];
+                      setPenStrokes(newStrokes);
+                      saveToHistory(null, null, null, null, null, null, newStrokes);
+                    }
+                  }}
+                  style={{
+                    marginLeft: 'auto',
+                    padding: '6px 12px',
+                    backgroundColor: 'transparent',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '5px',
+                    color: '#ff4444',
+                    cursor: 'pointer',
+                    fontSize: '0.9rem',
+                    transition: 'all 0.2s ease',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = 'rgba(255, 68, 68, 0.1)';
+                    e.currentTarget.style.borderColor = '#ff4444';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                    e.currentTarget.style.borderColor = 'var(--border-color)';
+                  }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                  </svg>
+                  {t('penSidebar.clear', 'Rensa')}
+                </button>
+              </div>
+            )}
+
+            {/* PDF Viewer Area - med margin-left för att göra plats för sidebar */}
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              flex: 1,
+              height: '100%',
+              position: 'relative',
+              overflow: 'hidden',
+              marginLeft: pdfDoc ? `${sidebarWidth}px` : '0' // Gör plats för sidebar
+            }}>
+              {/* PDF Viewer - Konstant padding-top så canvas inte hoppar när sidebar visas/döljs */}
+              <div
+                ref={containerRef}
+                className={
+                  tool === 'text' || tool === 'edit-text' ? 'text-cursor' :
+                    (
+                      tool === 'whiteout' ||
+                        tool === 'patch' ||
+                        (tool && tool.startsWith('shape')) ||
+                        (tool === 'highlight' && highlightMode === 'rect')
+                        ? 'crosshair-cursor'
+                        : ''
+                    )
+                }
+                style={{
+                  flex: 1,
+                  overflowX: 'auto',
+                  overflowY: (navMode === 'paged' && !canScrollCurrentPage) ? 'hidden' : 'auto',
+                  position: 'relative',
+                  backgroundColor: 'var(--bg-secondary)',
+                  cursor: tool === 'pan' ? (isPanning ? 'grabbing' : 'grab') : undefined,
+                  scrollSnapType: navMode === 'paged' ? 'y mandatory' : 'none'
+                }}
+                onMouseDown={handleMouseDown}
+                onMouseMove={handleMouseMove}
+                onMouseUp={handleMouseUp}
+                onMouseLeave={handleMouseUp}
+              >
+                {pdfDoc ? (
+                  <div style={{
+                    position: 'relative',
+                    paddingTop: '100px', // Fast värde så canvas inte flyttas när sidebar ändras (text-sidebar är högst)
+                    paddingLeft: '20px',
+                    paddingRight: '20px',
+                    paddingBottom: '20px',
+                    minWidth: 'max-content',
+                    boxSizing: 'border-box',
+                    display: effectiveLayout === 'double' ? 'grid' : 'flex',
+                    gridTemplateColumns: effectiveLayout === 'double' ? 'repeat(2, max-content)' : undefined,
+                    flexDirection: effectiveLayout === 'double' ? undefined : 'column',
+                    justifyContent: 'center',
+                    alignItems: effectiveLayout === 'double' ? 'start' : 'center',
+                    gap: '20px' // Mellanrum mellan sidor / mellan grid items
+                  }}>
+                    {/* Rendera alla sidor */}
+                    {pdfPages.map((page, index) => {
+                      const pageNum = index + 1;
+                      const viewport = pageViewports[index];
+                      if (!viewport) return null;
+
                       return (
-                        <TransparentTextBox
-                          key={`text-${pageNum}-${globalIndex}`}
-                          textBox={{
-                            ...textBox,
-                            ...(selectedElement === globalIndex && selectedType === 'text' ? {
-                              fontSizePt: textSettings.fontSizePt,
-                              fontFamily: textSettings.fontFamily,
-                              color: textSettings.color,
-                              fontWeight: textSettings.fontWeight,
-                              fontStyle: textSettings.fontStyle
-                            } : {})
+                        <div
+                          key={pageNum}
+                          ref={(el) => {
+                            if (el) pageContainerRefs.current[pageNum] = el;
                           }}
-                          zoom={zoom}
-                          autoEdit={textBox.isNew === true}
-                          textBoxIndex={globalIndex}
-                          tool={tool}
-                          hovered={tool === 'edit-text' && hoveredTextBoxIndex === globalIndex}
-                          onHoverChange={(isHovering) => {
-                            if (tool === 'edit-text') {
-                              setHoveredTextBoxIndex(isHovering ? globalIndex : null);
-                            }
+                          style={{
+                            position: 'relative',
+                            display: 'inline-block',
+                            marginBottom: effectiveLayout === 'double' ? '0' : (index < pdfPages.length - 1 ? '20px' : '0'),
+                            scrollSnapAlign: navMode === 'paged' ? 'center' : 'none'
                           }}
-                          editTrigger={textEditTrigger && textEditTrigger.index === globalIndex ? textEditTrigger.nonce : null}
-                          onEditComplete={() => {
-                            setTextEditTrigger(null);
-                          }}
-                          onUpdate={(updated) => {
-                            const newBoxes = [...textBoxes];
-                            const prev = textBoxes[globalIndex];
+                        >
+                          <canvas
+                            ref={(el) => {
+                              if (el) canvasRefs.current[pageNum] = el;
+                            }}
+                            style={{
+                              border: '1px solid #ccc',
+                              boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                              display: 'block',
+                              backgroundColor: 'white',
+                              cursor:
+                                (tool === 'highlight' && highlightMode === 'freehand') || tool === 'eraser'
+                                  ? 'none'
+                                  : (tool === 'highlight' && highlightMode === 'rect')
+                                    ? 'crosshair'
+                                    : tool === 'shape-check'
+                                      ? `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='%23000' d='M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z'/%3E%3C/svg%3E") 12 12, crosshair`
+                                      : tool === 'shape-cross'
+                                        ? `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='%23000' d='M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z'/%3E%3C/svg%3E") 12 12, crosshair`
+                                        : (tool === 'whiteout' || tool === 'patch' || (tool && tool.startsWith('shape')) || tool === 'link' || tool === 'crop')
+                                          ? 'crosshair'
+                                          : (tool === 'text' || tool === 'edit-text')
+                                            ? 'text'
+                                            : 'default'
+                            }}
+                          />
 
-                            // 1) Markera dirty först
-                            let dirtyCandidate = markTextBoxDirty(prev, updated);
-
-                            // 2) För importerad text: sampla maskColor direkt när den blir dirty,
-                            // så originaltexten inte "blöder igenom" i UI.
-                            if (dirtyCandidate?.isImported && dirtyCandidate?.isDirty && !dirtyCandidate?.maskColor) {
-                              const rectForSample = prev?.originalRect || dirtyCandidate?.originalRect || dirtyCandidate?.rect || prev?.rect;
-                              if (rectForSample) {
-                                const sampleRectPx = rectPtToPx(rectForSample, zoom);
-                                const sampled = sampleRectAverageColor(pageNum, sampleRectPx);
-                                const maskColor = sampled || 'rgba(255,255,255,1)';
-                                dirtyCandidate = markTextBoxDirty(prev, { ...dirtyCandidate, maskColor });
-                              } else {
-                                dirtyCandidate = markTextBoxDirty(prev, { ...dirtyCandidate, maskColor: 'rgba(255,255,255,1)' });
-                              }
-                            }
-
-                            newBoxes[globalIndex] = dirtyCandidate;
-                            setTextBoxes(newBoxes);
-                            saveToHistory(newBoxes, null, null, null, commentBoxes);
-                          }}
-                          isSelected={selectedElement === globalIndex && selectedType === 'text'}
-                          onResizeStart={(handle, e) => {
-                            e.stopPropagation();
-                            const canvasRef = canvasRefs.current[pageNum];
-                            if (!canvasRef) return;
-                            const canvasRect = canvasRef.getBoundingClientRect();
-                            const mouseX = e.clientX - canvasRect.left;
-                            const mouseY = e.clientY - canvasRect.top;
-                            
-                            const textBoxContainer = document.querySelector(`[data-textbox-container-index="${globalIndex}"]`);
-                            let actualRectPx = rectPtToPx(textBox.rect, zoom);
-                            
-                            if (textBoxContainer) {
-                              const rect = textBoxContainer.getBoundingClientRect();
-                              const canvasRect = canvasRef.getBoundingClientRect();
-                              actualRectPx = {
-                                x: rect.left - canvasRect.left,
-                                y: rect.top - canvasRect.top,
-                                width: rect.width,
-                                height: rect.height
-                              };
-                            }
-                            
-                            let edgeX = mouseX;
-                            let edgeY = mouseY;
-                            
-                            if (handle.includes('n')) {
-                              edgeY = actualRectPx.y;
-                            } else if (handle.includes('s')) {
-                              edgeY = actualRectPx.y + actualRectPx.height;
-                            }
-                            if (handle.includes('w')) {
-                              edgeX = actualRectPx.x;
-                            } else if (handle.includes('e')) {
-                              edgeX = actualRectPx.x + actualRectPx.width;
-                            }
-                            
-                            const actualRectPt = rectPxToPt(actualRectPx, zoom);
-                            isResizingRef.current = true;
-                            setIsResizing(true);
-                            setResizeHandle(handle);
-                            setDragStart({ x: edgeX, y: edgeY });
-                            setOriginalRect(actualRectPt);
-                            setOriginalFontSize(textBox.fontSizePt || 12);
-                          }}
-                          onRotationStart={(e) => {
-                            e.stopPropagation();
-                            const canvasRef = canvasRefs.current[pageNum];
-                            if (!canvasRef) return;
-                            const canvasRect = canvasRef.getBoundingClientRect();
-                            const mouseX = e.clientX - canvasRect.left;
-                            const mouseY = e.clientY - canvasRect.top;
-                            
-                            // Hitta textrutans centrum
-                            const textBoxContainer = document.querySelector(`[data-textbox-container-index="${globalIndex}"]`);
-                            let actualRectPx = rectPtToPx(textBox.rect, zoom);
-                            
-                            if (textBoxContainer) {
-                              const rect = textBoxContainer.getBoundingClientRect();
-                              const canvasRect = canvasRef.getBoundingClientRect();
-                              actualRectPx = {
-                                x: rect.left - canvasRect.left,
-                                y: rect.top - canvasRect.top,
-                                width: rect.width,
-                                height: rect.height
-                              };
-                            }
-                            
-                            const centerX = actualRectPx.x + actualRectPx.width / 2;
-                            const centerY = actualRectPx.y + actualRectPx.height / 2;
-                            
-                            setIsRotating(true);
-                            setRotationStart({ x: mouseX, y: mouseY, centerX, centerY });
-                            setInitialRotation(textBox.rotation || 0);
-                          }}
-                        />
-                      );
-                    })}
-                  
-                  {/* Render shape boxes för denna sida */}
-                  {shapeBoxes
-                    .filter((shapeBox) => {
-                      const boxPageIndex = shapeBox.pageIndex !== undefined ? shapeBox.pageIndex : 0;
-                      return boxPageIndex === index;
-                    })
-                    .map((shapeBox, localIndex) => {
-                      const globalIndex = shapeBoxes.findIndex(sb => sb === shapeBox);
-                      return (
-                        <ShapeBox
-                          key={`shape-${pageNum}-${globalIndex}`}
-                          shape={{
-                            ...shapeBox,
-                            ...(shapeBox.type === 'highlight'
-                              ? {
-                                  fillColor: hexToRgba(shapeBox.fillColor || '#FFEB3B', shapeBox.opacity ?? 0.35),
-                                  strokeColor: 'transparent'
-                                }
-                              : {}),
-                            ...(selectedElement === globalIndex && selectedType === 'shape' && shapeBox.type !== 'highlight'
-                              ? {
-                                  strokeColor: shapeSettings.strokeColor,
-                                  fillColor: shapeSettings.fillColor,
-                                  strokeWidth: shapeSettings.strokeWidth
-                                }
-                              : {})
-                          }}
-                          zoom={zoom}
-                          isSelected={selectedElement === globalIndex && selectedType === 'shape'}
-                          tool={tool}
-                          onUpdate={(updated) => {
-                            const newBoxes = [...shapeBoxes];
-                            newBoxes[globalIndex] = updated;
-                            setShapeBoxes(newBoxes);
-                            saveToHistory(null, null, null, newBoxes, commentBoxes);
-                          }}
-                          onResizeStart={(handle, e) => {
-                            e.stopPropagation();
-                            const isLineOrArrow = (shapeBox.type === 'line' || shapeBox.type === 'arrow') && shapeBox.startPoint && shapeBox.endPoint;
-                            if (isLineOrArrow) return; // Endast resize för rektanglar/cirklar
-                            const pageNum = shapeBox.pageIndex !== undefined ? shapeBox.pageIndex + 1 : currentPage;
-                            const canvasRef = canvasRefs.current[pageNum];
-                            if (!canvasRef) return;
-                            const canvasRect = canvasRef.getBoundingClientRect();
-                            const x = e.clientX - canvasRect.left;
-                            const y = e.clientY - canvasRect.top;
-                            setIsResizing(true);
-                            setResizeHandle(handle);
-                            setDragStart({ x, y });
-                            setOriginalRect(shapeBox.rect);
-                          }}
-                          onDragStart={(e) => {
-                            e.stopPropagation();
-                            const isLineOrArrow = (shapeBox.type === 'line' || shapeBox.type === 'arrow') && shapeBox.startPoint && shapeBox.endPoint;
-                            if (isLineOrArrow) return; // Endast drag för rektanglar/cirklar, inte linjer/pilar
-                            const pageNum = shapeBox.pageIndex !== undefined ? shapeBox.pageIndex + 1 : currentPage;
-                            const canvasRef = canvasRefs.current[pageNum];
-                            if (!canvasRef || !shapeBox.rect) return;
-                            const canvasRect = canvasRef.getBoundingClientRect();
-                            const x = e.clientX - canvasRect.left;
-                            const y = e.clientY - canvasRect.top;
-                            const sbRect = rectPtToPx(shapeBox.rect, zoom);
-                            setIsDragging(true);
-                            setDragStart({ x, y, startX: sbRect.x, startY: sbRect.y });
-                            setOriginalRect(shapeBox.rect);
-                          }}
-                          onEndpointDragStart={(endpointType, e) => {
-                            e.stopPropagation();
-                            const pageNum = shapeBox.pageIndex !== undefined ? shapeBox.pageIndex + 1 : currentPage;
-                            const canvasRef = canvasRefs.current[pageNum];
-                            if (!canvasRef) return;
-                            const canvasRect = canvasRef.getBoundingClientRect();
-                            const x = e.clientX - canvasRect.left;
-                            const y = e.clientY - canvasRect.top;
-                            
-                            if (shapeBox.startPoint && shapeBox.endPoint) {
-                              setIsDraggingEndpoint(true);
-                              setDraggingEndpointType(endpointType);
-                              setOriginalStartPoint(shapeBox.startPoint);
-                              setOriginalEndPoint(shapeBox.endPoint);
-                              setDragStart({ x, y });
-                            }
-                          }}
-                          onShapeClick={(e) => {
-                            // När shape klickas och shape-verktyget inte är aktivt, aktivera det
-                            const shapeType = shapeBox.type || 'rectangle';
-                            const isHighlightShape = shapeType === 'highlight';
-                            const isShapeToolActive = tool && (tool.startsWith('shape') || tool === 'highlight');
-                            if (!isShapeToolActive) {
-                              if (containerRef.current) {
-                                scrollPositionRef.current = containerRef.current.scrollTop;
-                              }
-                              setTool(isHighlightShape ? 'highlight' : `shape-${shapeType}`);
-                              setSelectedElement(globalIndex);
-                              setSelectedType('shape');
-                              // Starta dragging direkt
-                              const pageNum = shapeBox.pageIndex !== undefined ? shapeBox.pageIndex + 1 : currentPage;
-                              const canvasRef = canvasRefs.current[pageNum];
-                              if (canvasRef) {
-                                const canvasRect = canvasRef.getBoundingClientRect();
-                                const x = e.clientX - canvasRect.left;
-                                const y = e.clientY - canvasRect.top;
-                                const isLineOrArrow = (shapeBox.type === 'line' || shapeBox.type === 'arrow') && shapeBox.startPoint && shapeBox.endPoint;
-                                if (isLineOrArrow && shapeBox.startPoint && shapeBox.endPoint) {
-                                  setIsDragging(true);
-                                  setOriginalStartPoint(shapeBox.startPoint);
-                                  setOriginalEndPoint(shapeBox.endPoint);
-                                  setDragStart({ x, y });
-                                } else if (shapeBox.rect) {
-                                  const sbRect = rectPtToPx(shapeBox.rect, zoom);
-                                  setIsDragging(true);
-                                  setDragStart({ x, y, startX: sbRect.x, startY: sbRect.y });
-                                  setOriginalRect(shapeBox.rect);
-                                }
-                              }
-                            }
-                          }}
-                        />
-                      );
-                    })}
-                  
-                  {/* Render comment boxes för denna sida */}
-                  {commentBoxes
-                    .filter((commentBox) => {
-                      const boxPageIndex = commentBox.pageIndex !== undefined ? commentBox.pageIndex : 0;
-                      return boxPageIndex === index;
-                    })
-                    .map((commentBox, localIndex) => {
-                      const globalIndex = commentBoxes.findIndex(cb => cb === commentBox);
-                      return (
-                        <CommentBox
-                          key={`comment-${pageNum}-${globalIndex}`}
-                          commentBox={commentBox}
-                          zoom={zoom}
-                          isSelected={selectedElement === globalIndex && selectedType === 'comment'}
-                          forceHidePopup={isDragging && selectedType === 'comment'}
-                          onUpdate={(updated) => {
-                            const newBoxes = [...commentBoxes];
-                            newBoxes[globalIndex] = updated;
-                            setCommentBoxes(newBoxes);
-                            saveToHistory(null, null, null, null, newBoxes);
-                          }}
-                          onDelete={(commentIdOrBox) => {
-                            // Hitta kommentaren baserat på id eller index
-                            const indexToDelete = typeof commentIdOrBox === 'string' 
-                              ? commentBoxes.findIndex(cb => cb.id === commentIdOrBox)
-                              : commentBoxes.findIndex(cb => cb === commentIdOrBox);
-                            
-                            if (indexToDelete !== -1) {
-                              const newBoxes = commentBoxes.filter((_, i) => i !== indexToDelete);
-                              setCommentBoxes(newBoxes);
-                              if (selectedElement === indexToDelete && selectedType === 'comment') {
-                                setSelectedElement(null);
-                                setSelectedType(null);
-                              }
-                              saveToHistory(null, null, null, null, newBoxes);
-                            }
-                          }}
-                          onEditEnd={handleCommentEditEnd}
-                        />
-                      );
-                    })}
-                  
-                  {/* Drawing preview för punkt-till-punkt linjer/pilar */}
-                  {isDrawing && lineStartPoint && lineEndPoint && drawingPage === pageNum && (tool === 'shape-line' || tool === 'shape-arrow') && (
-                    <svg
-                      style={{
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        width: '100%',
-                        height: '100%',
-                        pointerEvents: 'none',
-                        overflow: 'visible'
-                      }}
-                    >
-                      {(() => {
-                        const shapeType = tool.replace('shape-', '');
-                        const strokeColor = shapeSettings.strokeColor || '#000000';
-                        const strokeWidth = shapeSettings.strokeWidth || 2;
-
-                        if (shapeType === 'line') {
-                          return (
-                            <line
-                              x1={lineStartPoint.x}
-                              y1={lineStartPoint.y}
-                              x2={lineEndPoint.x}
-                              y2={lineEndPoint.y}
-                              stroke={strokeColor}
-                              strokeWidth={strokeWidth}
-                              strokeDasharray="5,5"
-                              opacity={0.8}
+                          {/* Crop Overlay */}
+                          {tool === 'crop' && (
+                            <CropOverlay
+                              active={tool === 'crop'}
+                              cropRegion={activeCropPage === index ? cropRegion : null}
+                              onCropChange={(rect) => handleCropChange(rect, index)}
+                              onCropComplete={(rect) => handleCropComplete(rect, index)}
+                              pageRect={null} // Not strictly needed if overlay is absolute 100%
+                              onCancel={handleCancelCrop}
                             />
-                          );
-                        } else if (shapeType === 'arrow') {
-                          const dx = lineEndPoint.x - lineStartPoint.x;
-                          const dy = lineEndPoint.y - lineStartPoint.y;
-                          const angle = Math.atan2(dy, dx);
-                          const length = Math.sqrt(dx * dx + dy * dy);
-                          const arrowHeadLength = Math.min(15, length * 0.2);
-                          const arrowHeadAngle = Math.PI / 6; // 30 degrees
-                          
-                          return (
-                            <g opacity={0.8}>
-                              <line
-                                x1={lineStartPoint.x}
-                                y1={lineStartPoint.y}
-                                x2={lineEndPoint.x}
-                                y2={lineEndPoint.y}
-                                stroke={strokeColor}
-                                strokeWidth={strokeWidth}
-                                strokeDasharray="5,5"
+                          )}
+
+                          {/* Render whiteout boxes för denna sida */}
+                          {whiteoutBoxes
+                            .filter((whiteoutBox) => {
+                              const boxPageIndex = whiteoutBox.pageIndex !== undefined ? whiteoutBox.pageIndex : 0;
+                              return boxPageIndex === index;
+                            })
+                            .map((whiteoutBox, localIndex) => {
+                              // Hitta global index
+                              const globalIndex = whiteoutBoxes.findIndex(wb => wb === whiteoutBox);
+                              return (
+                                <WhiteoutBox
+                                  key={`whiteout-${globalIndex}`}
+                                  whiteoutBox={whiteoutBox}
+                                  zoom={zoom}
+                                  isSelected={selectedElement === globalIndex && selectedType === 'whiteout'}
+                                  tool={tool}
+                                  whiteoutBoxIndex={globalIndex}
+                                  onUpdate={(updated) => {
+                                    const newBoxes = [...whiteoutBoxes];
+                                    newBoxes[globalIndex] = updated;
+                                    setWhiteoutBoxes(newBoxes);
+                                    saveToHistory(null, newBoxes, null, null, commentBoxes);
+                                  }}
+                                  onResizeStart={(handle, e) => {
+                                    e.stopPropagation();
+                                    const pageNum = whiteoutBox.pageIndex !== undefined ? whiteoutBox.pageIndex + 1 : currentPage;
+                                    const canvasRef = canvasRefs.current[pageNum];
+                                    if (!canvasRef) return;
+                                    const canvasRect = canvasRef.getBoundingClientRect();
+                                    const x = e.clientX - canvasRect.left;
+                                    const y = e.clientY - canvasRect.top;
+                                    setIsResizing(true);
+                                    setResizeHandle(handle);
+                                    setDragStart({ x, y });
+                                    setOriginalRect(whiteoutBox.rect);
+                                  }}
+                                  onRotationStart={(e) => {
+                                    e.stopPropagation();
+                                    const pageNum = whiteoutBox.pageIndex !== undefined ? whiteoutBox.pageIndex + 1 : currentPage;
+                                    const canvasRef = canvasRefs.current[pageNum];
+                                    if (!canvasRef) return;
+                                    const canvasRect = canvasRef.getBoundingClientRect();
+                                    const mouseX = e.clientX - canvasRect.left;
+                                    const mouseY = e.clientY - canvasRect.top;
+
+                                    let actualRectPx = rectPtToPx(whiteoutBox.rect, zoom);
+                                    const container = document.querySelector(`[data-whiteout-container-index="${globalIndex}"]`);
+                                    if (container) {
+                                      const rect = container.getBoundingClientRect();
+                                      actualRectPx = {
+                                        x: rect.left - canvasRect.left,
+                                        y: rect.top - canvasRect.top,
+                                        width: rect.width,
+                                        height: rect.height
+                                      };
+                                    }
+
+                                    const centerX = actualRectPx.x + actualRectPx.width / 2;
+                                    const centerY = actualRectPx.y + actualRectPx.height / 2;
+
+                                    setSelectedElement(globalIndex);
+                                    setSelectedType('whiteout');
+                                    setIsRotating(true);
+                                    setRotationStart({ x: mouseX, y: mouseY, centerX, centerY });
+                                    setInitialRotation(whiteoutBox.rotation || 0);
+                                  }}
+                                />
+                              );
+                            })}
+
+                          {/* Render patch boxes för denna sida */}
+                          {patchBoxes
+                            .filter((patchBox) => {
+                              const boxPageIndex = patchBox.pageIndex !== undefined ? patchBox.pageIndex : 0;
+                              return boxPageIndex === index;
+                            })
+                            .map((patchBox, localIndex) => {
+                              const globalIndex = patchBoxes.findIndex(pb => pb === patchBox);
+                              // Hämta källsidan om den finns, annars använd targetsidan (för bakåtkompatibilitet)
+                              const sourcePageIndex = patchBox.sourcePageIndex !== undefined
+                                ? patchBox.sourcePageIndex
+                                : (patchBox.pageIndex !== undefined ? patchBox.pageIndex : index);
+                              const sourcePage = pdfPages[sourcePageIndex] || null;
+                              return (
+                                <PatchBox
+                                  key={`patch-${pageNum}-${globalIndex}`}
+                                  patchBox={patchBox}
+                                  zoom={zoom}
+                                  pdfPage={page} // Target page (där patchen visas)
+                                  sourcePdfPage={sourcePage} // Source page (där patchen kopieras från)
+                                  pdfPageNum={pageNum}
+                                  isSelected={selectedElement === globalIndex && selectedType === 'patch'}
+                                  tool={tool}
+                                  onUpdate={(updated) => {
+                                    const newBoxes = [...patchBoxes];
+                                    newBoxes[globalIndex] = updated;
+                                    setPatchBoxes(newBoxes);
+                                    saveToHistory(null, null, newBoxes, null, commentBoxes);
+                                  }}
+                                />
+                              );
+                            })}
+
+                          {/* Frihand-highlight strokes för denna sida */}
+                          <svg
+                            width={viewport.width}
+                            height={viewport.height}
+                            style={{
+                              position: 'absolute',
+                              top: 0,
+                              left: 0,
+                              pointerEvents: 'none',
+                              overflow: 'visible'
+                            }}
+                          >
+                            {highlightStrokes
+                              .filter((stroke) => stroke.pageIndex === index)
+                              .map((stroke, strokeIdx) => {
+                                const pointsPx = (stroke.points || []).map((p) => pointPtToPx(p, zoom));
+                                if (pointsPx.length < 2) return null;
+                                const d = pointsPx
+                                  .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`)
+                                  .join(' ');
+                                return (
+                                  <path
+                                    key={`stroke-${pageNum}-${strokeIdx}`}
+                                    d={d}
+                                    fill="none"
+                                    stroke={hexToRgba(stroke.color || '#FFEB3B', stroke.opacity ?? 0.35)}
+                                    strokeWidth={(stroke.strokeWidth || 12) * zoom}
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    opacity={stroke.opacity ?? 0.35}
+                                    style={{ mixBlendMode: 'multiply' }}
+                                  />
+                                );
+                              })}
+                            {/* Live-stroke preview */}
+                            {currentStroke && currentStroke.pageIndex === index && currentStroke.points?.length > 1 && (
+                              <path
+                                d={currentStroke.points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')}
+                                fill="none"
+                                stroke={hexToRgba(currentStroke.color || '#FFEB3B', currentStroke.opacity ?? 0.35)}
+                                strokeWidth={(currentStroke.strokeWidth || 12) * zoom}
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                opacity={currentStroke.opacity ?? 0.35}
+                                style={{ mixBlendMode: 'multiply' }}
                               />
-                              <polygon
-                                points={`
+                            )}
+                            {/* Cursor preview ring för frihand highlight */}
+                            {highlightCursor && highlightCursor.pageNum === pageNum && highlightMode === 'freehand' && tool === 'highlight' && (
+                              <circle
+                                cx={highlightCursor.x}
+                                cy={highlightCursor.y}
+                                r={(highlightSettings.strokeWidth / 2) * zoom}
+                                fill="none"
+                                stroke={hexToRgba(highlightSettings.color, 0.9)}
+                                strokeWidth={2}
+                                opacity={0.9}
+                              />
+                            )}
+                            {/* Cursor preview ring för eraser */}
+                            {eraserCursor && eraserCursor.pageNum === pageNum && tool === 'eraser' && (
+                              <circle
+                                cx={eraserCursor.x}
+                                cy={eraserCursor.y}
+                                r={(eraserSettings.size / 2) * zoom}
+                                fill="none"
+                                stroke={eraserCursorColor}
+                                strokeWidth={2}
+                                opacity={0.9}
+                              />
+                            )}
+
+                            {/* Pen strokes för denna sida */}
+                            {penStrokes
+                              .filter((stroke) => stroke.pageIndex === index)
+                              .map((stroke, strokeIdx) => {
+                                const pointsPx = (stroke.points || []).map((p) => pointPtToPx(p, zoom));
+                                if (pointsPx.length < 2) return null;
+                                const d = pointsPx
+                                  .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`)
+                                  .join(' ');
+                                return (
+                                  <path
+                                    key={`pen-stroke-${pageNum}-${strokeIdx}`}
+                                    d={d}
+                                    fill="none"
+                                    stroke={hexToRgba(stroke.color || '#000000', stroke.opacity ?? 1.0)}
+                                    strokeWidth={(stroke.strokeWidth || 3) * zoom}
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    opacity={stroke.opacity ?? 1.0}
+                                  />
+                                );
+                              })}
+                            {/* Live-pen-stroke preview */}
+                            {currentPenStroke && currentPenStroke.pageIndex === index && currentPenStroke.points?.length > 1 && (
+                              <path
+                                d={currentPenStroke.points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')}
+                                fill="none"
+                                stroke={hexToRgba(currentPenStroke.color || '#000000', currentPenStroke.opacity ?? 1.0)}
+                                strokeWidth={(currentPenStroke.strokeWidth || 3) * zoom}
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                opacity={currentPenStroke.opacity ?? 1.0}
+                              />
+                            )}
+                            {/* Cursor preview ring för penna */}
+                            {penCursor && penCursor.pageNum === pageNum && tool === 'pen' && (
+                              <circle
+                                cx={penCursor.x}
+                                cy={penCursor.y}
+                                r={(penSettings.strokeWidth / 2) * zoom}
+                                fill="none"
+                                stroke={hexToRgba(penSettings.color, 0.9)}
+                                strokeWidth={1}
+                                opacity={0.9}
+                              />
+                            )}
+                          </svg>
+
+                          {/* Search result highlights för denna sida */}
+                          {searchResults.length > 0 && (
+                            <svg
+                              width={viewport.width}
+                              height={viewport.height}
+                              style={{
+                                position: 'absolute',
+                                top: 0,
+                                left: 0,
+                                pointerEvents: 'none',
+                                overflow: 'visible',
+                                zIndex: 5
+                              }}
+                            >
+                              {searchResults
+                                .filter((result) => result.pageIndex === index)
+                                .map((result, resultIdx) => {
+                                  const isCurrentMatch = searchResults.indexOf(result) === currentSearchIndex;
+                                  return (result.highlights || []).map((hl, hlIdx) => (
+                                    <rect
+                                      key={`search-${pageNum}-${resultIdx}-${hlIdx}`}
+                                      x={hl.x * zoom}
+                                      y={hl.y * zoom}
+                                      width={hl.width * zoom}
+                                      height={hl.height * zoom}
+                                      fill={isCurrentMatch ? 'rgba(255, 165, 0, 0.5)' : 'rgba(255, 255, 0, 0.4)'}
+                                      stroke={isCurrentMatch ? '#ff6600' : 'transparent'}
+                                      strokeWidth={isCurrentMatch ? 2 : 0}
+                                      data-search-result-index={isCurrentMatch && hlIdx === 0 ? searchResults.indexOf(result) : undefined}
+                                    />
+                                  ));
+                                })}
+                            </svg>
+                          )}
+
+                          {/* Render text boxes för denna sida */}
+                          {textBoxes
+                            .filter((textBox) => {
+                              const boxPageIndex = textBox.pageIndex !== undefined ? textBox.pageIndex : 0;
+                              return boxPageIndex === index;
+                            })
+                            .map((textBox, localIndex) => {
+                              const globalIndex = textBoxes.findIndex(tb => tb === textBox);
+                              return (
+                                <TransparentTextBox
+                                  key={`text-${pageNum}-${globalIndex}`}
+                                  textBox={{
+                                    ...textBox,
+                                    ...(selectedElement === globalIndex && selectedType === 'text' ? {
+                                      fontSizePt: textSettings.fontSizePt,
+                                      fontFamily: textSettings.fontFamily,
+                                      color: textSettings.color,
+                                      fontWeight: textSettings.fontWeight,
+                                      fontStyle: textSettings.fontStyle
+                                    } : {})
+                                  }}
+                                  zoom={zoom}
+                                  autoEdit={textBox.isNew === true}
+                                  textBoxIndex={globalIndex}
+                                  tool={tool}
+                                  hovered={tool === 'edit-text' && hoveredTextBoxIndex === globalIndex}
+                                  onHoverChange={(isHovering) => {
+                                    if (tool === 'edit-text') {
+                                      setHoveredTextBoxIndex(isHovering ? globalIndex : null);
+                                    }
+                                  }}
+                                  editTrigger={textEditTrigger && textEditTrigger.index === globalIndex ? textEditTrigger.nonce : null}
+                                  onEditComplete={() => {
+                                    setTextEditTrigger(null);
+                                    // Om servern är igång: applicera importerade ändringar direkt i PDF:en så vi slipper mask/grå ruta.
+                                    const tb = textBoxes[globalIndex];
+                                    if (tb?.isImported && tb?.isDirty) {
+                                      scheduleApplyDirtyImportedTextViaServer();
+                                    }
+                                  }}
+                                  onUpdate={(updated) => {
+                                    const newBoxes = [...textBoxes];
+                                    const prev = textBoxes[globalIndex];
+
+                                    // 1) Markera dirty först
+                                    let dirtyCandidate = markTextBoxDirty(prev, updated);
+
+                                    // 2) För importerad text: sampla maskColor direkt när den blir dirty,
+                                    // så originaltexten inte "blöder igenom" i UI.
+                                    if (dirtyCandidate?.isImported && dirtyCandidate?.isDirty && !dirtyCandidate?.maskColor) {
+                                      const rectForSample = prev?.originalRect || dirtyCandidate?.originalRect || dirtyCandidate?.rect || prev?.rect;
+                                      if (rectForSample) {
+                                        const sampleRectPx = rectPtToPx(rectForSample, zoom);
+                                        const sampled = sampleRectAverageColor(pageNum, sampleRectPx);
+                                        const maskColor = sampled || 'rgba(255,255,255,1)';
+                                        dirtyCandidate = markTextBoxDirty(prev, { ...dirtyCandidate, maskColor });
+                                      } else {
+                                        dirtyCandidate = markTextBoxDirty(prev, { ...dirtyCandidate, maskColor: 'rgba(255,255,255,1)' });
+                                      }
+                                    }
+
+                                    newBoxes[globalIndex] = dirtyCandidate;
+                                    setTextBoxes(newBoxes);
+                                    saveToHistory(newBoxes, null, null, null, commentBoxes);
+                                  }}
+                                  isSelected={selectedElement === globalIndex && selectedType === 'text'}
+                                  onResizeStart={(handle, e) => {
+                                    e.stopPropagation();
+                                    const canvasRef = canvasRefs.current[pageNum];
+                                    if (!canvasRef) return;
+                                    const canvasRect = canvasRef.getBoundingClientRect();
+                                    const mouseX = e.clientX - canvasRect.left;
+                                    const mouseY = e.clientY - canvasRect.top;
+
+                                    const textBoxContainer = document.querySelector(`[data-textbox-container-index="${globalIndex}"]`);
+                                    let actualRectPx = rectPtToPx(textBox.rect, zoom);
+
+                                    if (textBoxContainer) {
+                                      const rect = textBoxContainer.getBoundingClientRect();
+                                      const canvasRect = canvasRef.getBoundingClientRect();
+                                      actualRectPx = {
+                                        x: rect.left - canvasRect.left,
+                                        y: rect.top - canvasRect.top,
+                                        width: rect.width,
+                                        height: rect.height
+                                      };
+                                    }
+
+                                    let edgeX = mouseX;
+                                    let edgeY = mouseY;
+
+                                    if (handle.includes('n')) {
+                                      edgeY = actualRectPx.y;
+                                    } else if (handle.includes('s')) {
+                                      edgeY = actualRectPx.y + actualRectPx.height;
+                                    }
+                                    if (handle.includes('w')) {
+                                      edgeX = actualRectPx.x;
+                                    } else if (handle.includes('e')) {
+                                      edgeX = actualRectPx.x + actualRectPx.width;
+                                    }
+
+                                    const actualRectPt = rectPxToPt(actualRectPx, zoom);
+                                    isResizingRef.current = true;
+                                    setIsResizing(true);
+                                    setResizeHandle(handle);
+                                    setDragStart({ x: edgeX, y: edgeY });
+                                    setOriginalRect(actualRectPt);
+                                    setOriginalFontSize(textBox.fontSizePt || 12);
+                                  }}
+                                  onRotationStart={(e) => {
+                                    e.stopPropagation();
+                                    const canvasRef = canvasRefs.current[pageNum];
+                                    if (!canvasRef) return;
+                                    const canvasRect = canvasRef.getBoundingClientRect();
+                                    const mouseX = e.clientX - canvasRect.left;
+                                    const mouseY = e.clientY - canvasRect.top;
+
+                                    // Hitta textrutans centrum
+                                    const textBoxContainer = document.querySelector(`[data-textbox-container-index="${globalIndex}"]`);
+                                    let actualRectPx = rectPtToPx(textBox.rect, zoom);
+
+                                    if (textBoxContainer) {
+                                      const rect = textBoxContainer.getBoundingClientRect();
+                                      const canvasRect = canvasRef.getBoundingClientRect();
+                                      actualRectPx = {
+                                        x: rect.left - canvasRect.left,
+                                        y: rect.top - canvasRect.top,
+                                        width: rect.width,
+                                        height: rect.height
+                                      };
+                                    }
+
+                                    const centerX = actualRectPx.x + actualRectPx.width / 2;
+                                    const centerY = actualRectPx.y + actualRectPx.height / 2;
+
+                                    setIsRotating(true);
+                                    setRotationStart({ x: mouseX, y: mouseY, centerX, centerY });
+                                    setInitialRotation(textBox.rotation || 0);
+                                  }}
+                                  onDragStart={(e) => {
+                                    const canvasRef = canvasRefs.current[pageNum];
+                                    if (!canvasRef) return;
+                                    const canvasRect = canvasRef.getBoundingClientRect();
+                                    const x = e.clientX - canvasRect.left;
+                                    const y = e.clientY - canvasRect.top;
+
+                                    // Hitta textrutans faktiska dimensioner
+                                    const textBoxContainer = document.querySelector(`[data-textbox-container-index="${globalIndex}"]`);
+                                    let actualRectPx = rectPtToPx(textBox.rect, zoom);
+
+                                    if (textBoxContainer) {
+                                      const rect = textBoxContainer.getBoundingClientRect();
+                                      actualRectPx = {
+                                        x: rect.left - canvasRect.left,
+                                        y: rect.top - canvasRect.top,
+                                        width: rect.width,
+                                        height: rect.height
+                                      };
+                                    }
+
+                                    const actualRectPt = rectPxToPt(actualRectPx, zoom);
+                                    setIsDragging(true);
+                                    setDragStart({ x, y, startX: actualRectPx.x, startY: actualRectPx.y });
+                                    setOriginalRect(actualRectPt);
+                                  }}
+                                />
+                              );
+                            })}
+
+                          {/* Render shape boxes för denna sida */}
+                          {shapeBoxes
+                            .filter((shapeBox) => {
+                              const boxPageIndex = shapeBox.pageIndex !== undefined ? shapeBox.pageIndex : 0;
+                              return boxPageIndex === index;
+                            })
+                            .map((shapeBox, localIndex) => {
+                              const globalIndex = shapeBoxes.findIndex(sb => sb === shapeBox);
+                              return (
+                                <ShapeBox
+                                  key={`shape-${pageNum}-${globalIndex}`}
+                                  shape={{
+                                    ...shapeBox,
+                                    ...(shapeBox.type === 'highlight'
+                                      ? {
+                                        fillColor: hexToRgba(shapeBox.fillColor || '#FFEB3B', shapeBox.opacity ?? 0.35),
+                                        strokeColor: 'transparent'
+                                      }
+                                      : {}),
+                                    ...(selectedElement === globalIndex && selectedType === 'shape' && shapeBox.type !== 'highlight'
+                                      ? {
+                                        strokeColor: shapeSettings.strokeColor,
+                                        fillColor: shapeSettings.fillColor,
+                                        strokeWidth: shapeSettings.strokeWidth
+                                      }
+                                      : {})
+                                  }}
+                                  zoom={zoom}
+                                  isSelected={selectedElement === globalIndex && selectedType === 'shape'}
+                                  tool={tool}
+                                  onUpdate={(updated) => {
+                                    const newBoxes = [...shapeBoxes];
+                                    newBoxes[globalIndex] = updated;
+                                    setShapeBoxes(newBoxes);
+                                    saveToHistory(null, null, null, newBoxes, commentBoxes);
+                                  }}
+                                  onResizeStart={(handle, e) => {
+                                    e.stopPropagation();
+                                    const isLineOrArrow = (shapeBox.type === 'line' || shapeBox.type === 'arrow') && shapeBox.startPoint && shapeBox.endPoint;
+                                    if (isLineOrArrow) return; // Endast resize för rektanglar/cirklar
+                                    const pageNum = shapeBox.pageIndex !== undefined ? shapeBox.pageIndex + 1 : currentPage;
+                                    const canvasRef = canvasRefs.current[pageNum];
+                                    if (!canvasRef) return;
+                                    const canvasRect = canvasRef.getBoundingClientRect();
+                                    const x = e.clientX - canvasRect.left;
+                                    const y = e.clientY - canvasRect.top;
+                                    setIsResizing(true);
+                                    setResizeHandle(handle);
+                                    setDragStart({ x, y });
+                                    setOriginalRect(shapeBox.rect);
+                                  }}
+                                  onDragStart={(e) => {
+                                    e.stopPropagation();
+                                    const isLineOrArrow = (shapeBox.type === 'line' || shapeBox.type === 'arrow') && shapeBox.startPoint && shapeBox.endPoint;
+                                    if (isLineOrArrow) return; // Endast drag för rektanglar/cirklar, inte linjer/pilar
+                                    const pageNum = shapeBox.pageIndex !== undefined ? shapeBox.pageIndex + 1 : currentPage;
+                                    const canvasRef = canvasRefs.current[pageNum];
+                                    if (!canvasRef || !shapeBox.rect) return;
+                                    const canvasRect = canvasRef.getBoundingClientRect();
+                                    const x = e.clientX - canvasRect.left;
+                                    const y = e.clientY - canvasRect.top;
+                                    const sbRect = rectPtToPx(shapeBox.rect, zoom);
+                                    setIsDragging(true);
+                                    setDragStart({ x, y, startX: sbRect.x, startY: sbRect.y });
+                                    setOriginalRect(shapeBox.rect);
+                                  }}
+                                  onEndpointDragStart={(endpointType, e) => {
+                                    e.stopPropagation();
+                                    const pageNum = shapeBox.pageIndex !== undefined ? shapeBox.pageIndex + 1 : currentPage;
+                                    const canvasRef = canvasRefs.current[pageNum];
+                                    if (!canvasRef) return;
+                                    const canvasRect = canvasRef.getBoundingClientRect();
+                                    const x = e.clientX - canvasRect.left;
+                                    const y = e.clientY - canvasRect.top;
+
+                                    if (shapeBox.startPoint && shapeBox.endPoint) {
+                                      setIsDraggingEndpoint(true);
+                                      setDraggingEndpointType(endpointType);
+                                      setOriginalStartPoint(shapeBox.startPoint);
+                                      setOriginalEndPoint(shapeBox.endPoint);
+                                      setDragStart({ x, y });
+                                    }
+                                  }}
+                                  onShapeClick={(e) => {
+                                    // När shape klickas och shape-verktyget inte är aktivt, aktivera det
+                                    const shapeType = shapeBox.type || 'rectangle';
+                                    const isHighlightShape = shapeType === 'highlight';
+                                    const isShapeToolActive = tool && (tool.startsWith('shape') || tool === 'highlight');
+                                    const isCrossCheckTool = tool === 'shape-cross' || tool === 'shape-check';
+
+                                    // Om cross/check-verktyget är aktivt, tillåt selektion av existerande former
+                                    if (isCrossCheckTool) {
+                                      setSelectedElement(globalIndex);
+                                      setSelectedType('shape');
+                                      return;
+                                    }
+
+                                    if (!isShapeToolActive) {
+                                      if (containerRef.current) {
+                                        scrollPositionRef.current = containerRef.current.scrollTop;
+                                      }
+                                      setTool(isHighlightShape ? 'highlight' : `shape-${shapeType}`);
+                                      setSelectedElement(globalIndex);
+                                      setSelectedType('shape');
+                                      // Starta dragging direkt
+                                      const pageNum = shapeBox.pageIndex !== undefined ? shapeBox.pageIndex + 1 : currentPage;
+                                      const canvasRef = canvasRefs.current[pageNum];
+                                      if (canvasRef) {
+                                        const canvasRect = canvasRef.getBoundingClientRect();
+                                        const x = e.clientX - canvasRect.left;
+                                        const y = e.clientY - canvasRect.top;
+                                        const isLineOrArrow = (shapeBox.type === 'line' || shapeBox.type === 'arrow') && shapeBox.startPoint && shapeBox.endPoint;
+                                        if (isLineOrArrow && shapeBox.startPoint && shapeBox.endPoint) {
+                                          setIsDragging(true);
+                                          setOriginalStartPoint(shapeBox.startPoint);
+                                          setOriginalEndPoint(shapeBox.endPoint);
+                                          setDragStart({ x, y });
+                                        } else if (shapeBox.rect) {
+                                          const sbRect = rectPtToPx(shapeBox.rect, zoom);
+                                          setIsDragging(true);
+                                          setDragStart({ x, y, startX: sbRect.x, startY: sbRect.y });
+                                          setOriginalRect(shapeBox.rect);
+                                        }
+                                      }
+                                    }
+                                  }}
+                                />
+                              );
+                            })}
+
+                          {/* Drawing preview for Link */}
+                          {tool === 'link' && isDrawing && drawStart && currentRect && drawingPage === (index + 1) && (
+                            <div
+                              style={{
+                                position: 'absolute',
+                                left: currentRect.x,
+                                top: currentRect.y,
+                                width: currentRect.width,
+                                height: currentRect.height,
+                                border: '2px dashed #4A90E2',
+                                backgroundColor: 'rgba(74, 144, 226, 0.2)',
+                                zIndex: 100,
+                                pointerEvents: 'none'
+                              }}
+                            />
+                          )}
+
+                          {/* Render Link Boxes */}
+                          {linkBoxes
+                            .filter((lb) => {
+                              const boxPageIndex = lb.pageIndex !== undefined ? lb.pageIndex : 0;
+                              return boxPageIndex === index;
+                            })
+                            .map((lb, localIndex) => {
+                              const globalIndex = linkBoxes.indexOf(lb);
+                              return (
+                                <div key={`link-group-${pageNum}-${globalIndex}`}>
+                                  <LinkBox
+                                    key={`link-${pageNum}-${globalIndex}`}
+                                    linkBox={lb}
+                                    zoom={zoom}
+                                    isSelected={selectedElement === globalIndex && selectedType === 'link'}
+                                    tool={tool}
+                                    onSelect={() => {
+                                      setSelectedElement(globalIndex);
+                                      setSelectedType('link');
+                                      // Aktivera länk-verktyget om det inte är aktivt, för konsekvens
+                                      if (tool !== 'link') {
+                                        setTool('link');
+                                      }
+                                    }}
+                                    onResizeStart={(handle, e) => {
+                                      e.stopPropagation();
+                                      const boxPageIndex = lb.pageIndex !== undefined ? lb.pageIndex : 0;
+                                      const pageNum = boxPageIndex + 1;
+                                      const canvasRef = canvasRefs.current[pageNum];
+                                      if (!canvasRef) return;
+                                      const canvasRect = canvasRef.getBoundingClientRect();
+                                      const x = e.clientX - canvasRect.left;
+                                      const y = e.clientY - canvasRect.top;
+
+                                      setIsResizing(true);
+                                      setResizeHandle(handle);
+                                      setDragStart({ x, y });
+                                      setOriginalRect(lb.rect);
+                                    }}
+                                    onDragStart={(e) => {
+                                      e.stopPropagation();
+                                      const boxPageIndex = lb.pageIndex !== undefined ? lb.pageIndex : 0;
+                                      const pageNum = boxPageIndex + 1;
+                                      const canvasRef = canvasRefs.current[pageNum];
+                                      if (!canvasRef) return;
+                                      const canvasRect = canvasRef.getBoundingClientRect();
+                                      const x = e.clientX - canvasRect.left;
+                                      const y = e.clientY - canvasRect.top;
+
+                                      const lbRect = rectPtToPx(lb.rect, zoom);
+                                      setIsDragging(true);
+                                      setDragStart({ x, y, startX: lbRect.x, startY: lbRect.y });
+                                      setOriginalRect(lb.rect);
+                                    }}
+                                  />
+                                  {selectedElement === globalIndex && selectedType === 'link' && (
+                                    <LinkSettingsPopover
+                                      linkBox={lb}
+                                      position={{
+                                        x: rectPtToPx(lb.rect, zoom).x + (rectPtToPx(lb.rect, zoom).width / 2) - 150,
+                                        y: rectPtToPx(lb.rect, zoom).y + rectPtToPx(lb.rect, zoom).height + 10
+                                      }}
+                                      onUpdate={(updatedBox) => {
+                                        const newBoxes = [...linkBoxes];
+                                        newBoxes[globalIndex] = updatedBox;
+                                        setLinkBoxes(newBoxes);
+                                        saveToHistory();
+                                      }}
+                                      onDelete={() => {
+                                        const newBoxes = linkBoxes.filter((_, i) => i !== globalIndex);
+                                        setLinkBoxes(newBoxes);
+                                        setSelectedElement(null);
+                                        setSelectedType(null);
+                                        saveToHistory();
+                                      }}
+                                    />
+                                  )}
+                                </div>
+                              );
+                            })
+                          }
+
+                          {/* Render comment boxes för denna sida */}
+                          {commentBoxes
+                            .filter((commentBox) => {
+                              const boxPageIndex = commentBox.pageIndex !== undefined ? commentBox.pageIndex : 0;
+                              return boxPageIndex === index;
+                            })
+                            .map((commentBox, localIndex) => {
+                              const globalIndex = commentBoxes.findIndex(cb => cb === commentBox);
+                              return (
+                                <CommentBox
+                                  key={`comment-${pageNum}-${globalIndex}`}
+                                  commentBox={commentBox}
+                                  zoom={zoom}
+                                  isSelected={selectedElement === globalIndex && selectedType === 'comment'}
+                                  forceHidePopup={isDragging && selectedType === 'comment'}
+                                  onUpdate={(updated) => {
+                                    const newBoxes = [...commentBoxes];
+                                    newBoxes[globalIndex] = updated;
+                                    setCommentBoxes(newBoxes);
+                                    saveToHistory(null, null, null, null, newBoxes);
+                                  }}
+                                  onDelete={(commentIdOrBox) => {
+                                    // Hitta kommentaren baserat på id eller index
+                                    const indexToDelete = typeof commentIdOrBox === 'string'
+                                      ? commentBoxes.findIndex(cb => cb.id === commentIdOrBox)
+                                      : commentBoxes.findIndex(cb => cb === commentIdOrBox);
+
+                                    if (indexToDelete !== -1) {
+                                      const newBoxes = commentBoxes.filter((_, i) => i !== indexToDelete);
+                                      setCommentBoxes(newBoxes);
+                                      if (selectedElement === indexToDelete && selectedType === 'comment') {
+                                        setSelectedElement(null);
+                                        setSelectedType(null);
+                                      }
+                                      saveToHistory(null, null, null, null, newBoxes);
+                                    }
+                                  }}
+                                  onEditEnd={handleCommentEditEnd}
+                                />
+                              );
+                            })}
+
+                          {/* Drawing preview för punkt-till-punkt linjer/pilar */}
+                          {isDrawing && lineStartPoint && lineEndPoint && drawingPage === pageNum && (tool === 'shape-line' || tool === 'shape-arrow') && (
+                            <svg
+                              style={{
+                                position: 'absolute',
+                                top: 0,
+                                left: 0,
+                                width: '100%',
+                                height: '100%',
+                                pointerEvents: 'none',
+                                overflow: 'visible'
+                              }}
+                            >
+                              {(() => {
+                                const shapeType = tool.replace('shape-', '');
+                                const strokeColor = shapeSettings.strokeColor || '#000000';
+                                const strokeWidth = shapeSettings.strokeWidth || 2;
+
+                                if (shapeType === 'line') {
+                                  return (
+                                    <line
+                                      x1={lineStartPoint.x}
+                                      y1={lineStartPoint.y}
+                                      x2={lineEndPoint.x}
+                                      y2={lineEndPoint.y}
+                                      stroke={strokeColor}
+                                      strokeWidth={strokeWidth}
+                                      strokeDasharray="5,5"
+                                      opacity={0.8}
+                                    />
+                                  );
+                                } else if (shapeType === 'arrow') {
+                                  const dx = lineEndPoint.x - lineStartPoint.x;
+                                  const dy = lineEndPoint.y - lineStartPoint.y;
+                                  const angle = Math.atan2(dy, dx);
+                                  const length = Math.sqrt(dx * dx + dy * dy);
+                                  const arrowHeadLength = Math.min(15, length * 0.2);
+                                  const arrowHeadAngle = Math.PI / 6; // 30 degrees
+
+                                  return (
+                                    <g opacity={0.8}>
+                                      <line
+                                        x1={lineStartPoint.x}
+                                        y1={lineStartPoint.y}
+                                        x2={lineEndPoint.x}
+                                        y2={lineEndPoint.y}
+                                        stroke={strokeColor}
+                                        strokeWidth={strokeWidth}
+                                        strokeDasharray="5,5"
+                                      />
+                                      <polygon
+                                        points={`
                                   ${lineEndPoint.x},${lineEndPoint.y}
                                   ${lineEndPoint.x - arrowHeadLength * Math.cos(angle - arrowHeadAngle)},${lineEndPoint.y - arrowHeadLength * Math.sin(angle - arrowHeadAngle)}
                                   ${lineEndPoint.x - arrowHeadLength * Math.cos(angle + arrowHeadAngle)},${lineEndPoint.y - arrowHeadLength * Math.sin(angle + arrowHeadAngle)}
                                 `}
-                                fill={strokeColor}
-                              />
-                            </g>
-                          );
-                        }
-                        return null;
-                      })()}
-                    </svg>
-                  )}
-                  
-                  {/* Drawing preview för rektanglar/cirklar och whiteout */}
-                  {isDrawing && currentRect && drawingPage === pageNum && !(tool === 'shape-line' || tool === 'shape-arrow') && (
-                    <div
-                      style={{
-                        position: 'absolute',
-                        left: `${currentRect.x}px`,
-                        top: `${currentRect.y}px`,
-                        width: `${currentRect.width}px`,
-                        height: `${currentRect.height}px`,
-                        border: tool && tool.startsWith('shape') ? '1px dashed rgba(255, 107, 53, 0.5)' : '2px dashed #0066ff',
-                        backgroundColor: tool === 'whiteout' ? (() => {
-                          // Konvertera hex till rgba med 50% opacity
-                          const hex = whiteoutColor.replace('#', '');
-                          const r = parseInt(hex.substring(0, 2), 16);
-                          const g = parseInt(hex.substring(2, 4), 16);
-                          const b = parseInt(hex.substring(4, 6), 16);
-                          return `rgba(${r}, ${g}, ${b}, 0.5)`;
-                        })() : (tool && tool.startsWith('shape') ? 'transparent' : 'transparent'),
-                        pointerEvents: 'none',
-                        boxSizing: 'border-box'
-                      }}
-                    >
-                      {/* Shape preview - Visa faktisk form med SVG */}
-                      {tool && tool.startsWith('shape') && (
-                        <svg
-                          width={currentRect.width}
-                          height={currentRect.height}
-                          style={{
-                            position: 'absolute',
-                            top: 0,
-                            left: 0,
-                            width: '100%',
-                            height: '100%',
-                            overflow: 'visible'
-                          }}
-                        >
-                          {(() => {
-                            const shapeType = shapeSettings.type || tool.replace('shape-', '');
-                            const width = currentRect.width;
-                            const height = currentRect.height;
-                            const centerX = width / 2;
-                            const centerY = height / 2;
-                            const strokeColor = shapeSettings.strokeColor || '#000000';
-                            const fillColor = shapeSettings.fillColor || 'transparent';
-                            const strokeWidth = shapeSettings.strokeWidth || 2;
-
-                            switch (shapeType) {
-                              case 'rectangle':
-                                return (
-                                  <rect
-                                    x={0}
-                                    y={0}
-                                    width={width}
-                                    height={height}
-                                    fill={fillColor === 'transparent' ? 'none' : fillColor}
-                                    stroke={strokeColor}
-                                    strokeWidth={strokeWidth}
-                                    opacity={0.8}
-                                  />
-                                );
-                              
-                              case 'circle':
-                                const radius = Math.min(width, height) / 2;
-                                return (
-                                  <ellipse
-                                    cx={centerX}
-                                    cy={centerY}
-                                    rx={radius}
-                                    ry={radius}
-                                    fill={fillColor === 'transparent' ? 'none' : fillColor}
-                                    stroke={strokeColor}
-                                    strokeWidth={strokeWidth}
-                                    opacity={0.8}
-                                  />
-                                );
-                              
-                              default:
+                                        fill={strokeColor}
+                                      />
+                                    </g>
+                                  );
+                                }
                                 return null;
-                            }
-                          })()}
-                        </svg>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div style={{
-            padding: '40px',
-            textAlign: 'center',
-            color: '#666'
-          }}>
-            <p>Ladda en PDF-fil för att börja redigera</p>
-          </div>
-        )}
-          </div>
-        </div>
-      </div>
+                              })()}
+                            </svg>
+                          )}
 
-      {/* Floating Control Bar */}
-      {pdfDoc && (
-        <FloatingControlBar
-          currentPage={currentPage}
-          totalPages={pdfDoc.numPages}
-          onPageChange={(pageNum) => {
-            currentPageRef.current = pageNum;
-            setCurrentPage(pageNum);
-            scrollToPage(pageNum);
-          }}
-          zoom={zoom}
-          onZoomIn={handleZoomIn}
-          onZoomOut={handleZoomOut}
-          panToolActive={tool === 'pan'}
-          onPanToolToggle={() => {
-            if (tool === 'pan') {
-              setTool(null);
-            } else {
-              setTool('pan');
-            }
-          }}
-          sidebarWidth={sidebarWidth}
-        />
-      )}
+                          {/* Drawing preview för rektanglar/cirklar och whiteout */}
+                          {isDrawing && currentRect && drawingPage === pageNum && !(tool === 'shape-line' || tool === 'shape-arrow') && (
+                            <div
+                              style={{
+                                position: 'absolute',
+                                left: `${currentRect.x}px`,
+                                top: `${currentRect.y}px`,
+                                width: `${currentRect.width}px`,
+                                height: `${currentRect.height}px`,
+                                border: tool && tool.startsWith('shape') ? '1px dashed rgba(255, 107, 53, 0.5)' : '2px dashed #0066ff',
+                                backgroundColor: tool === 'whiteout' ? (() => {
+                                  // Konvertera hex till rgba med 50% opacity
+                                  const hex = whiteoutColor.replace('#', '');
+                                  const r = parseInt(hex.substring(0, 2), 16);
+                                  const g = parseInt(hex.substring(2, 4), 16);
+                                  const b = parseInt(hex.substring(4, 6), 16);
+                                  return `rgba(${r}, ${g}, ${b}, 0.5)`;
+                                })() : (tool && tool.startsWith('shape') ? 'transparent' : 'transparent'),
+                                pointerEvents: 'none',
+                                boxSizing: 'border-box'
+                              }}
+                            >
+                              {/* Shape preview - Visa faktisk form med SVG */}
+                              {tool && tool.startsWith('shape') && (
+                                <svg
+                                  width={currentRect.width}
+                                  height={currentRect.height}
+                                  style={{
+                                    position: 'absolute',
+                                    top: 0,
+                                    left: 0,
+                                    width: '100%',
+                                    height: '100%',
+                                    overflow: 'visible'
+                                  }}
+                                >
+                                  {(() => {
+                                    const shapeType = shapeSettings.type || tool.replace('shape-', '');
+                                    const width = currentRect.width;
+                                    const height = currentRect.height;
+                                    const centerX = width / 2;
+                                    const centerY = height / 2;
+                                    const strokeColor = shapeSettings.strokeColor || '#000000';
+                                    const fillColor = shapeSettings.fillColor || 'transparent';
+                                    const strokeWidth = shapeSettings.strokeWidth || 2;
 
-      {/* Download Modal */}
-      <DownloadModal
-        isOpen={showDownloadModal}
-        onClose={() => setShowDownloadModal(false)}
-        onDownload={handleDownload}
-        defaultFilename="intyg_164879456"
+                                    switch (shapeType) {
+                                      case 'rectangle':
+                                        return (
+                                          <rect
+                                            x={0}
+                                            y={0}
+                                            width={width}
+                                            height={height}
+                                            fill={fillColor === 'transparent' ? 'none' : fillColor}
+                                            stroke={strokeColor}
+                                            strokeWidth={strokeWidth}
+                                            opacity={0.8}
+                                          />
+                                        );
+
+                                      case 'circle':
+                                        const radius = Math.min(width, height) / 2;
+                                        return (
+                                          <ellipse
+                                            cx={centerX}
+                                            cy={centerY}
+                                            rx={radius}
+                                            ry={radius}
+                                            fill={fillColor === 'transparent' ? 'none' : fillColor}
+                                            stroke={strokeColor}
+                                            strokeWidth={strokeWidth}
+                                            opacity={0.8}
+                                          />
+                                        );
+
+                                      default:
+                                        return null;
+                                    }
+                                  })()}
+                                </svg>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div style={{
+                    padding: '40px',
+                    textAlign: 'center',
+                    color: '#666'
+                  }}>
+                    <p>Ladda en PDF-fil för att börja redigera</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Floating Control Bar */}
+          {
+            pdfDoc && settings.navigationToolbarEnabled && (
+              <FloatingControlBar
+                currentPage={currentPage}
+                totalPages={pdfDoc.numPages}
+                onPageChange={(pageNum) => {
+                  currentPageRef.current = pageNum;
+                  setCurrentPage(pageNum);
+                  scrollToPage(pageNum);
+                }}
+                zoom={zoom}
+                onZoomIn={handleZoomIn}
+                onZoomOut={handleZoomOut}
+                panToolActive={tool === 'pan'}
+                onPanToolToggle={() => {
+                  if (tool === 'pan') {
+                    setTool(null);
+                  } else {
+                    setTool('pan');
+                  }
+                }}
+                sidebarWidth={sidebarWidth}
+              />
+            )
+          }
+
+          {/* OCR Banner for scanned PDFs */}
+          {
+            showOcrBanner && pdfDoc && (
+              <div style={{ position: 'fixed', top: '70px', left: sidebarWidth + 16, right: 16, zIndex: 1000 }}>
+                <OcrBanner
+                  onMakeEditable={() => {
+                    setShowOcrBanner(false);
+                    openToolWithCurrentPdf('ocr-pdf');
+                  }}
+                  onDismiss={() => setShowOcrBanner(false)}
+                />
+              </div>
+            )
+          }
+
+          {/* Download Modal */}
+          <DownloadModal
+            isOpen={showDownloadModal}
+            onClose={() => setShowDownloadModal(false)}
+            onDownload={handleDownload}
+            defaultFilename="intyg_164879456"
+          />
+
+          {/* FORCE RENDER TRANSLATE VIEW (Moved UP) */}
+          <div style={{ display: translateView.isOpen ? 'block' : 'none', position: 'fixed', zIndex: 999999, inset: 0, background: 'red' }}>
+            <div style={{ padding: 50, fontSize: 40, color: 'white' }}>TEST: TRANSLATE VIEW WRAPPER IS VISIBLE</div>
+            {translateView.isOpen && console.log('App: Force Render Loop - Visible (MOVED UP)', { state: translateView })}
+            <TranslatePdfView
+              pdfBuffer={translateView.pdfBuffer || new Uint8Array(0)}
+              fileName={translateView.fileName || 'document.pdf'}
+              targetLang={translateView.targetLang || 'sv'}
+              onClose={closeTranslateView}
+            />
+          </div>
+
+          {/* PDF Tools (ToolRunner Modal) */}
+          <PdfToolRunnerModal
+            isOpen={toolRunner.isOpen}
+            toolKey={toolRunner.toolKey}
+            initialFiles={toolRunner.initialFiles}
+            onClose={closeTool}
+            onStartTranslation={handleOpenTranslateView}
+          />
+
+          {/* Translate PDF Side-by-Side View */}
+
+
+
+          {/* Page Management Panel */}
+          {
+            showPageManagementPanel && pdfDoc && (
+              <PageManagementPanel
+                pdfDoc={pdfDoc}
+                numPages={pdfDoc.numPages}
+                initialPage={currentPage}
+                onSave={handleBatchPageUpdate}
+                onClose={() => setShowPageManagementPanel(false)}
+              />
+            )
+          }
+
+          {/* Loading indicator - use UploadProgress for file uploads, LoadingSpinner for other loading */}
+          {
+            isLoading && (
+              uploadProgress > 0
+                ? <UploadProgress progress={uploadProgress} message={loadingMessage} />
+                : <LoadingSpinner message={loadingMessage} />
+            )
+          }
+
+          {/* TRANSLATE VIEW - FINAL POSITION */}
+          {
+            translateView.isOpen && (
+              <TranslatePdfView
+                pdfBuffer={translateView.pdfBuffer || new Uint8Array(0)}
+                fileName={translateView.fileName || 'document.pdf'}
+                targetLang={translateView.targetLang || 'sv'}
+                onClose={closeTranslateView}
+              />
+            )
+          }
+
+          <ToastContainer toasts={toasts} onRemove={removeToast} />
+
+        </div> {/* End of Canvas container */}
+
+        {/* Settings Sidebar */}
+        {
+          showSettingsSidebar && (
+            <div style={{
+              width: '300px',
+              borderLeft: '1px solid var(--border-color)',
+              backgroundColor: 'var(--bg-secondary)',
+              zIndex: 20
+            }}>
+              <SettingsPopover
+                isOpen={true}
+                onClose={() => setShowSettingsSidebar(false)}
+                settings={settings}
+                onSettingChange={handleSettingChange}
+                isSidebar={true}
+              />
+            </div>
+          )
+        }
+
+      </div > {/* End of Main Content Area */}
+      <CropConfirmModal
+        isOpen={showCropConfirmModal}
+        onClose={handleCancelCrop}
+        onConfirm={handleConfirmCrop}
+        cropRegion={cropRegion}
       />
-
-      {/* Page Management Panel */}
-      {showPageManagementPanel && pdfDoc && (
-        <PageManagementPanel
-          pdfDoc={pdfDoc}
-          numPages={pdfDoc.numPages}
-          currentPage={currentPage}
-          onRotatePage={handleRotatePages}
-          onDeletePage={handleDeletePages}
-          onAddPage={handleAddPage}
-          onDuplicatePages={handleDuplicatePages}
-          onMovePages={handleMovePages}
-          onClose={() => setShowPageManagementPanel(false)}
-        />
-      )}
-
-      {/* Loading Spinner */}
-      {isLoading && <LoadingSpinner message={loadingMessage} />}
-
-      {/* Toast Notifications */}
-      <ToastContainer toasts={toasts} onRemove={removeToast} />
-    </div>
+    </div >
   );
 }
 

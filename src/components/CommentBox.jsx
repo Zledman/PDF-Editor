@@ -55,10 +55,10 @@ function createGradient(colorInput) {
   return `linear-gradient(180deg, ${base} 0%, ${base} 100%)`;
 }
 
-export default function CommentBox({ 
-  commentBox, 
-  zoom, 
-  onUpdate, 
+export default function CommentBox({
+  commentBox,
+  zoom,
+  onUpdate,
   onDelete,
   onEditEnd,
   isSelected,
@@ -76,7 +76,7 @@ export default function CommentBox({
 
   // Konvertera pt till px för visning
   const rectPx = rectPtToPx(commentBox.rect, zoom);
-  
+
   // Markör-storlek (sticky note-storlek)
   const markerSize = 24; // 24px för sticky note-utseende
 
@@ -98,7 +98,7 @@ export default function CommentBox({
           try {
             const length = textRef.current.value.length;
             textRef.current.setSelectionRange(length, length);
-          } catch (e) {}
+          } catch (e) { }
         }
       }, 10);
     }
@@ -123,7 +123,8 @@ export default function CommentBox({
       const updated = {
         ...commentBox,
         text: localText,
-        isNew: false
+        isNew: false,
+        timestamp: new Date().toISOString()
       };
       onUpdate(updated);
     }
@@ -202,6 +203,15 @@ export default function CommentBox({
     setPopupWidth(offsetWidth);
   }, []);
 
+  // Auto-open edit mode when selected (e.g. from sidebar)
+  useEffect(() => {
+    if (isSelected && !isEditing) {
+      if (forceHidePopup) return; // Don't open if explicitly hidden (e.g. drag)
+      setIsEditing(true);
+      setIsHovering(true);
+    }
+  }, [isSelected, forceHidePopup]);
+
   // Uppdatera dimensioner när popup visas eller innehåll ändras
   useEffect(() => {
     if ((isHovering && !isEditing && localText) || isEditing) {
@@ -218,25 +228,27 @@ export default function CommentBox({
     const container = containerRef.current;
     const containerRect = container.getBoundingClientRect();
     const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
-    
+
     const markerTop = containerRect.top + scrollTop;
     const spacing = 2; // Minska avståndet mellan popup och markör
-    const shouldMoveBelow = markerTop - popupHeight - spacing < scrollTop;
-    
-    const top = shouldMoveBelow 
+    const toolbarHeight = 300; // Ökad tröskel för att säkerställa att popup hamnar under ikonen nära toppen
+    const estimatedPopupHeight = popupHeight > 0 ? popupHeight : 180; // Uppskattad höjd om inte beräknad ännu
+    const shouldMoveBelow = containerRect.top - estimatedPopupHeight - spacing < toolbarHeight;
+
+    const top = shouldMoveBelow
       ? markerSize + spacing
       : -popupHeight - spacing;
-    
+
     const leftOffset = (markerSize - popupWidth) / 2;
     const viewportWidth = window.innerWidth;
     const containerLeft = containerRect.left;
-    
+
     const left = clamp(
       leftOffset,
       -containerLeft + 10,
       viewportWidth - containerLeft - popupWidth - 10
     );
-    
+
     return { top, left, shouldMoveBelow };
   }, [popupHeight, popupWidth, markerSize]);
 
@@ -305,26 +317,100 @@ export default function CommentBox({
           transform: 'none',
         }}
       >
-        {/* Kommentar-ikon */}
-        <span style={{ 
-          fontSize: '22px',
-          lineHeight: 1,
-          color: commentBox.backgroundColor || '#333',
-          fontWeight: 900,
-          textShadow: '0 0 1px currentColor',
-          userSelect: 'none'
-        }}>
+        {/* Dynamic Icon Rendering */}
+        <svg
+          width="32"
+          height="32"
+          viewBox="0 0 24 24"
+          style={{
+            filter: 'drop-shadow(1px 1px 2px rgba(0,0,0,0.3))',
+            pointerEvents: 'none'
+          }}
+        >
           {(() => {
             const iconType = commentBox.icon || 'speech-bubble';
-            if (iconType === 'speech-bubble') return '💬';
-            if (iconType === 'arrow') return '➜';
-            if (iconType === 'checkmark') return '✔';
-            if (iconType === 'x') return '✖';
-            if (iconType === 'star') return '★';
-            if (iconType === 'key') return '🔑';
-            return '💬'; // Default fallback
+            const baseColor = commentBox.backgroundColor || '#FFF59D';
+            const strokeColor = adjustLightness(baseColor, -40); // Darker shade for stroke
+
+            const commonProps = {
+              fill: baseColor,
+              stroke: strokeColor,
+              strokeWidth: "1.5", // Slightly thicker for better visibility
+              strokeLinecap: "round",
+              strokeLinejoin: "round"
+            };
+
+            switch (iconType) {
+              case 'chevron-right':
+                return <path d="M6 4l12 8-12 8" fill="none" stroke={baseColor} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" style={{ filter: `drop-shadow(1px 1px 0px ${strokeColor})` }} />;
+              // For line-based icons like chevron, we might want a different approach if they are "stickers". 
+              // But the user requested shapes that "follow the color". 
+              // Let's interpret "follow the color" as the shape itself is that color. 
+              // For filled shapes (bubble, circle, star) it makes sense to Fill = color, Stroke = dark.
+              // For line shapes (arrow, check, cross), having them as just Stroke = color might be too thin against PDF content.
+              // Let's give them a "casing" or make them thick. 
+              // Actually, the "thebestpdf.com" icons look like solid dark shapes.
+              // But the user said "follow the color".
+              // Let's try to make them all "filled" feeling or thick stroke.
+
+              case 'arrow-right':
+                return <path d="M5 12h14M12 5l7 7-7 7" fill="none" stroke={baseColor} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" style={{ filter: `drop-shadow(1px 1px 0px ${strokeColor})` }} />;
+
+              case 'check':
+                return <polyline points="20 6 9 17 4 12" fill="none" stroke={baseColor} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" style={{ filter: `drop-shadow(1px 1px 0px ${strokeColor})` }} />;
+
+              case 'cross':
+                return <path d="M18 6L6 18M6 6l12 12" fill="none" stroke={baseColor} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" style={{ filter: `drop-shadow(1px 1px 0px ${strokeColor})` }} />;
+
+              case 'up-arrow':
+                return <path d="M12 19V5M5 12l7-7 7 7" fill="none" stroke={baseColor} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" style={{ filter: `drop-shadow(1px 1px 0px ${strokeColor})` }} />;
+
+              case 'circle':
+                return <circle cx="12" cy="12" r="9" fill="none" stroke={baseColor} strokeWidth="4" style={{ filter: `drop-shadow(1px 1px 0px ${strokeColor})` }} />;
+
+              case 'triangle':
+                // Warning triangle usually has ! inside, but here we just do the shape
+                return <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" {...commonProps} />;
+
+              case 'note':
+                return <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" {...commonProps} />;
+
+              case 'paragraph':
+                return <path d="M13 4v16M17 4v16M19 4H9.5a4.5 4.5 0 0 0 0 9H13" fill="none" stroke={baseColor} strokeWidth="3" strokeLinecap="round" style={{ filter: `drop-shadow(1px 1px 0px ${strokeColor})` }} />;
+
+              case 'question':
+                return (
+                  <g>
+                    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" fill="none" stroke={baseColor} strokeWidth="4" strokeLinecap="round" style={{ filter: `drop-shadow(1px 1px 0px ${strokeColor})` }} />
+                    <circle cx="12" cy="17" r="1.5" fill={baseColor} stroke="none" style={{ filter: `drop-shadow(1px 1px 0px ${strokeColor})` }} />
+                  </g>
+                );
+
+              case 'star':
+                return <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" {...commonProps} />;
+
+              case 'key':
+                return (
+                  <path
+                    d="M22,18V22H18V19H15V16H12L9.74,13.74C9.19,13.91 8.61,14 8,14A6,6 0 0,1 2,8A6,6 0 0,1 8,2A6,6 0 0,1 14,8C14,8.61 13.91,9.19 13.74,9.74L22,18M7,5A2,2 0 0,0 5,7A2,2 0 0,0 7,9A2,2 0 0,0 9,7A2,2 0 0,0 7,5Z"
+                    fill={baseColor}
+                    stroke={strokeColor}
+                    strokeWidth="1"
+                    style={{ filter: `drop-shadow(1px 1px 0px ${strokeColor})` }}
+                  />
+                );
+
+              case 'speech-bubble':
+              default:
+                return (
+                  <path
+                    d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"
+                    {...commonProps}
+                  />
+                );
+            }
           })()}
-        </span>
+        </svg>
       </div>
 
       {/* Popup som visas vid hover eller redigering */}
@@ -349,7 +435,7 @@ export default function CommentBox({
             minWidth: '220px',
             maxWidth: '300px',
             background: createGradient(commentBox.backgroundColor),
-            borderRadius: '2px',
+            borderRadius: '8px',
             boxShadow: '2px 2px 8px rgba(0,0,0,0.3)',
             zIndex: isEditing ? 20 : 19,
             wordWrap: 'break-word',
@@ -360,7 +446,8 @@ export default function CommentBox({
             pointerEvents: 'auto',
             padding: '0',
             visibility: isStyleCalculationInProgress ? 'hidden' : 'visible',
-            border: 'none'
+            border: 'none',
+            overflow: 'hidden'
           }}
         >
           {/* Rubrik med stäng-knapp - post-it stil */}
@@ -418,8 +505,8 @@ export default function CommentBox({
                 placeholder={t('comments.writeComment')}
                 style={{
                   width: '100%',
-                  minHeight: '60px',
-                  maxHeight: '150px',
+                  minHeight: '100px',
+                  maxHeight: '200px',
                   padding: '0',
                   border: 'none',
                   fontSize: '14px',
@@ -428,16 +515,20 @@ export default function CommentBox({
                   outline: 'none',
                   backgroundColor: 'transparent', // Transparent för att visa post-it färg
                   color: '#333', // Mörk text
-                  lineHeight: '1.5'
+                  lineHeight: '1.5',
+                  display: 'block',
+                  margin: 0
                 }}
               />
             ) : (
               <div style={{
-                minHeight: '30px',
+                minHeight: '100px',
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'break-word',
                 color: '#333',
-                lineHeight: '1.5'
+                lineHeight: '1.5',
+                fontSize: '14px',
+                fontFamily: 'inherit'
               }}>
                 {localText || <span style={{ color: '#666', fontStyle: 'italic' }}>{t('comments.writeComment')}</span>}
               </div>

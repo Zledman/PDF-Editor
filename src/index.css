@@ -1,3 +1,58 @@
+:root {
+  /* Default Dark Theme */
+  --bg-primary: #141414;
+  --bg-secondary: #0d0d0d;
+  --bg-card: rgba(255, 255, 255, 0.03);
+  --bg-card-hover: rgba(255, 255, 255, 0.05);
+  --bg-menu: #252525;
+  --border-menu: rgba(255, 255, 255, 0.2);
+
+  --text-primary: #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.70);
+  --text-muted: rgba(255, 255, 255, 0.45);
+
+  --border-color: rgba(255, 255, 255, 0.08);
+  --border-hover: rgba(255, 107, 53, 0.3);
+
+  --brand-primary: #ff6b35;
+  --brand-gradient: linear-gradient(135deg, #ff6b35 0%, #ff8c42 100%);
+  --brand-glow: rgba(255, 107, 53, 0.15);
+
+  --nav-bg: rgba(18, 18, 18, 0.70);
+  --nav-border: rgba(255, 255, 255, 0.08);
+
+  --modal-overlay: rgba(0, 0, 0, 0.75);
+  --modal-bg: linear-gradient(145deg, #1a1a1a 0%, #0d0d0d 100%);
+}
+
+[data-theme='light'] {
+  /* Light Theme Overrides */
+  --bg-primary: #ffffff;
+  --bg-secondary: #f5f5f7;
+  --bg-card: #f2f2f5;
+  /* Slightly darker card background */
+  --bg-card-hover: #e8e8ed;
+  --bg-menu: #ffffff;
+  --border-menu: rgba(0, 0, 0, 0.15);
+
+  --text-primary: #111111;
+  /* Darker black */
+  --text-secondary: rgba(0, 0, 0, 0.75);
+  /* Darker secondary */
+  --text-muted: rgba(0, 0, 0, 0.60);
+
+  --border-color: rgba(0, 0, 0, 0.25);
+  /* Much stronger border */
+  --border-hover: rgba(255, 107, 53, 0.5);
+
+  --nav-bg: rgba(255, 255, 255, 0.95);
+  /* More opaque nav */
+  --nav-border: rgba(0, 0, 0, 0.15);
+
+  --modal-overlay: rgba(0, 0, 0, 0.5);
+  --modal-bg: #ffffff;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -35,4 +90,3 @@ input[type="file"] {
   /* Crosshair cursor med synlig kontur */
   cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath d='M8 0 L8 16 M0 8 L16 8' stroke='%23000' stroke-width='1.5'/%3E%3Cpath d='M8 0 L8 16 M0 8 L16 8' stroke='%23fff' stroke-width='0.5'/%3E%3C/svg%3E") 8 8, crosshair !important;
 }
-

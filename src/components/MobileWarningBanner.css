@@ -1,0 +1,114 @@
+/* Mobile Warning Banner - Only visible on small screens */
+.mobileWarningBanner {
+    display: none;
+    /* Hidden by default on desktop */
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    background: linear-gradient(135deg, #1a73e8 0%, #4285f4 100%);
+    color: #fff;
+    padding: 12px 16px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+    from {
+        transform: translateY(-100%);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.mobileWarningBanner__content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+}
+
+.mobileWarningBanner__icon {
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+    opacity: 0.9;
+}
+
+.mobileWarningBanner__text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.mobileWarningBanner__text strong {
+    font-weight: 600;
+}
+
+.mobileWarningBanner__text span {
+    opacity: 0.9;
+    font-size: 12px;
+}
+
+.mobileWarningBanner__dismiss {
+    position: absolute;
+    top: 50%;
+    right: 12px;
+    transform: translateY(-50%);
+    background: rgba(255, 255, 255, 0.15);
+    border: none;
+    border-radius: 50%;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+    padding: 0;
+}
+
+.mobileWarningBanner__dismiss:hover {
+    background: rgba(255, 255, 255, 0.25);
+}
+
+.mobileWarningBanner__dismiss svg {
+    width: 16px;
+    height: 16px;
+    color: #fff;
+}
+
+/* Show banner only on mobile screens (< 768px) */
+@media (max-width: 768px) {
+    .mobileWarningBanner {
+        display: flex;
+        align-items: center;
+    }
+}
+
+/* Adjust for very small screens */
+@media (max-width: 380px) {
+    .mobileWarningBanner {
+        padding: 10px 12px;
+    }
+
+    .mobileWarningBanner__text {
+        font-size: 12px;
+    }
+
+    .mobileWarningBanner__text span {
+        font-size: 11px;
+    }
+
+    .mobileWarningBanner__icon {
+        width: 20px;
+        height: 20px;
+    }
+}

@@ -3,14 +3,15 @@
   top: 0;
   z-index: 50;
   backdrop-filter: blur(10px);
-  background: rgba(18, 18, 18, 0.70);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--nav-bg);
+  border-bottom: 1px solid var(--nav-border);
 }
 
 .landingNavInner {
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 12px 20px;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 12px 60px;
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
@@ -27,7 +28,7 @@
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--text-primary);
   font-weight: 750;
   letter-spacing: -0.01em;
 }
@@ -39,12 +40,26 @@
   display: grid;
   place-items: center;
   color: #111;
-  background: linear-gradient(135deg, #ff6b35 0%, #ff8c42 100%);
+  background: var(--brand-gradient);
   box-shadow: 0 10px 26px rgba(255, 107, 53, 0.18);
 }
 
 .landingBrandText {
-  font-size: 1.05rem;
+  font-size: 1.15rem;
+  display: inline-flex;
+}
+
+.landingBrandPdf {
+  background: var(--brand-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-weight: 800;
+}
+
+.landingBrandMoment {
+  color: var(--text-primary);
+  font-weight: 600;
 }
 
 .landingNavCenter {
@@ -60,28 +75,42 @@
 }
 
 .landingNavItemAllTools {
-  color: rgba(255, 255, 255, 0.86);
-  border-color: rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  border-color: var(--border-color);
+  background: var(--bg-card);
 }
+
 .landingNavItemAllTools:hover {
-  border-color: rgba(255, 107, 53, 0.30);
-  background: rgba(255, 107, 53, 0.08);
+  border-color: var(--border-hover);
+  background: var(--bg-card-hover);
   transform: translateY(-1px);
+  color: var(--text-primary);
 }
 
 .landingToolsMenu {
   position: absolute;
   left: 0;
   top: calc(100% + 10px);
-  min-width: min(980px, calc(100vw - 40px));
+  min-width: min(1200px, calc(100vw - 40px));
   padding: 16px 16px 14px;
   border-radius: 16px;
-  background: rgba(18, 18, 18, 0.86);
-  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: var(--nav-bg);
+  border: 1px solid var(--nav-border);
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
   backdrop-filter: blur(10px);
   display: none;
+}
+
+/* Invisible bridge to keep hover active when moving from button to menu */
+.landingToolsMenu::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -14px;
+  /* Covers the 10px gap + some extra overlap */
+  height: 14px;
+  background: transparent;
 }
 
 /* Open on hover or keyboard focus */
@@ -92,7 +121,7 @@
 
 .landingToolsGrid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(130px, 1fr));
   gap: 14px 16px;
 }
 
@@ -104,7 +133,7 @@
   font-size: 0.78rem;
   font-weight: 750;
   letter-spacing: 0.06em;
-  color: rgba(255, 255, 255, 0.62);
+  color: var(--text-muted);
   margin: 2px 0 10px;
   text-transform: uppercase;
 }
@@ -117,33 +146,40 @@
 
 .landingToolItem {
   display: grid;
-  grid-template-columns: 14px 1fr;
+  grid-template-columns: 20px 1fr;
   gap: 10px;
   align-items: center;
   padding: 6px 8px;
   border-radius: 10px;
   background: transparent;
   border: 1px solid transparent;
-  color: rgba(255, 255, 255, 0.80);
+  color: var(--text-secondary);
   text-align: left;
   cursor: default;
 }
 
-.landingToolItem:hover {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.10);
+.landingToolItem.isEnabled {
+  cursor: pointer;
 }
 
-.landingToolIcon {
-  width: 12px;
-  height: 12px;
-  border-radius: 4px;
-  background: var(--toolColor, rgba(255, 255, 255, 0.35));
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+.landingToolItem.isDisabled {
+  opacity: 0.75;
+}
+
+.landingToolItem:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+
+.landingToolIconSvg {
+  width: 18px;
+  height: 18px;
+  filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.25));
 }
 
 .landingToolLabel {
-  font-size: 0.96rem;
+  font-size: 0.88rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -154,71 +190,158 @@
   border-radius: 999px;
   border: 1px solid transparent;
   background: transparent;
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--text-primary);
   font-weight: 650;
   cursor: pointer;
   transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, transform 140ms ease;
 }
 
 .landingNavItem.isActive {
-  color: rgba(255, 255, 255, 0.92);
-  border-color: rgba(255, 107, 53, 0.28);
-  background: rgba(255, 107, 53, 0.10);
+  color: var(--text-primary);
+  border-color: var(--brand-glow);
+  background: var(--brand-glow);
 }
 
 .landingNavItem.isActive:hover {
-  border-color: rgba(255, 107, 53, 0.44);
-  background: rgba(255, 107, 53, 0.14);
-  transform: translateY(-1px);
+  background: var(--brand-glow);
+  border-color: var(--brand-primary);
 }
 
 .landingNavItem.isDisabled {
-  opacity: 0.55;
-  cursor: default;
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.landingNavItem:hover:not(.isDisabled):not(.isActive) {
+  background: var(--bg-card-hover);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+  transform: translateY(-1px);
+}
+
+.landingNavBeta {
+  display: inline-block;
+  font-size: 0.65rem;
+  margin-left: 6px;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+  font-weight: 700;
+  text-transform: uppercase;
+  vertical-align: 1px;
 }
 
 .landingNavRight {
   display: flex;
   justify-content: flex-end;
+  gap: 12px;
+  align-items: center;
+}
+
+.landingThemeSwitch {
+  position: relative;
+  width: 56px;
+  height: 32px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  cursor: pointer;
+  padding: 0;
+  overflow: hidden;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.landingThemeSwitch:hover {
+  border-color: var(--border-hover);
+  background: var(--bg-card-hover);
+}
+
+.landingThemeSwitchTrack {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+  pointer-events: none;
+  font-size: 12px;
+}
+
+.landingThemeIconMoon,
+.landingThemeIconSun {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.3s ease;
+}
+
+.landingThemeIconMoon {
+  color: var(--text-secondary);
+  opacity: 0.5;
+}
+
+.landingThemeIconSun {
+  color: #FDB813;
+  /* Sun color */
+  opacity: 0.5;
+}
+
+.landingThemeSwitchThumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  pointer-events: none;
+  display: grid;
+  place-items: center;
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  z-index: 2;
+}
+
+.landingThemeSwitchThumb.isDark {
+  background: #1a1a1a;
+  color: white;
+  transform: translateX(24px);
+  /* Slide right */
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+.landingThemeSwitchThumb.isLight {
+  background: white;
+  color: #1a1a1a;
+  transform: translateX(0);
+  /* Left position */
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+/* Hide track icons when thumb is over them */
+.landingThemeSwitchThumb.isDark~.landingThemeSwitchTrack .landingThemeIconMoon {
+  opacity: 0;
+}
+
+.landingThemeSwitchThumb.isLight~.landingThemeSwitchTrack .landingThemeIconSun {
+  opacity: 0;
 }
 
 .landingLoginBtn {
-  padding: 9px 14px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  color: rgba(255, 255, 255, 0.82);
+  padding: 8px 20px;
+  border-radius: 999px;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
   font-weight: 650;
-  cursor: default;
+  cursor: pointer;
+  transition: all 140ms ease;
 }
 
-@media (max-width: 720px) {
-  .landingNavInner {
-    grid-template-columns: 1fr 1fr;
-    grid-template-areas:
-      'left right'
-      'center center';
-  }
-  .landingNavLeft {
-    grid-area: left;
-  }
-  .landingNavCenter {
-    grid-area: center;
-    justify-content: flex-start;
-  }
-  .landingNavRight {
-    grid-area: right;
-  }
-
-  .landingToolsMenu {
-    left: 0;
-    right: 0;
-    min-width: auto;
-  }
-
-  .landingToolsGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+.landingLoginBtn:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--text-primary);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
-
-

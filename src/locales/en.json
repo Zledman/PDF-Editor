@@ -16,6 +16,9 @@
     "delete": "Delete",
     "undo": "Undo",
     "redo": "Redo",
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out",
+    "crop": "Crop PDF",
     "zoom": "Zoom",
     "previous": "Previous",
     "next": "Next",
@@ -43,11 +46,63 @@
     "imageReady": "Drag to place the image",
     "mode": "Mode",
     "highlightRect": "Highlight area",
+    "pen": "Pen",
     "highlightFreehand": "Freehand highlight",
     "highlightColor": "Highlight color",
     "opacity": "Opacity",
     "stroke": "Width",
-    "eraser": "Eraser"
+    "eraser": "Eraser",
+    "ocr": "OCR",
+    "ocrHint": "Run OCR to make scanned text editable",
+    "cross": "Cross",
+    "crossHint": "Place a cross (X) on the PDF",
+    "check": "Check",
+    "checkHint": "Place a checkmark (✓) on the PDF",
+    "search": "Search",
+    "searchHint": "Search for text in the PDF (Ctrl+F)",
+    "moreTools": "More Tools",
+    "measure": "Measure",
+    "stamp": "Stamp",
+    "notes": "Notes",
+    "tooltips": {
+      "newPdf": "Go back to start page",
+      "addText": "Click on the PDF to add text",
+      "editText": "Click on a textbox to edit it",
+      "ocr": "Run OCR to make scanned text editable",
+      "search": "Search for text in the PDF (Ctrl+F)",
+      "whiteout": "Cover content with a white box",
+      "comment": "Add a comment to the PDF",
+      "cross": "Place a cross (X) on the PDF",
+      "check": "Place a checkmark (✓) on the PDF",
+      "copyArea": "Copy and paste an area from the PDF",
+      "image": "Select an image (PNG/JPG) and place on the page",
+      "imageReady": "Drag to place the image",
+      "highlight": "Highlight text with color",
+      "pen": "Draw freehand on the PDF",
+      "shapes": "Draw shapes like rectangles, circles, lines and arrows",
+      "pan": "Drag to move the PDF",
+      "eraser": "Erase elements by clicking on them",
+      "delete": "Delete selected element",
+      "pageLayout": "Change how the PDF is displayed",
+      "download": "Download or export the PDF",
+      "moreTools": "Show more tools",
+      "crop": "Draw a region to crop the page"
+    }
+  },
+  "search": {
+    "placeholder": "Search in document...",
+    "noResults": "No results",
+    "previous": "Previous match",
+    "next": "Next match",
+    "close": "Close"
+  },
+  "crop": {
+    "title": "Crop PDF",
+    "confirmMessage": "Are you sure you want to crop the page to the selected area? This cannot be undone.",
+    "applyToCurrent": "Current page only",
+    "applyToAll": "All pages",
+    "cancel": "Cancel",
+    "confirm": "Crop"
   },
   "textSidebar": {
     "size": "Size",
@@ -71,6 +126,13 @@
     "strokeWidth": "Stroke Width",
     "selectColor": "Select Color",
     "preview": "Preview"
+  },
+  "penSidebar": {
+    "color": "Color",
+    "size": "Size",
+    "opacity": "Opacity",
+    "clear": "Clear",
+    "confirmClear": "Are you sure you want to clear all pen strokes?"
   },
   "commentSidebar": {
     "color": "Color",
@@ -98,8 +160,9 @@
     "darkGreen": "Dark Green"
   },
   "landingPage": {
-    "title": "PDF Editor",
-    "subtitle": "Edit your PDF files with text, whiteout and copy area tools",
+    "title": "PDFMoment",
+    "earlyAccess": "Early Access",
+    "subtitle": "We're actively building a complete PDF toolkit. Try our tools today and help shape the future of document editing.",
     "getStarted": "Get started",
     "openUploader": "Open uploader",
     "chooseFile": "Choose file",
@@ -109,7 +172,21 @@
     "orClick": "or click to select",
     "createNew": "Create new PDF",
     "createNewHint": "Create a blank document and start from scratch",
-    "footer": "Multi-page support • Zoom • Undo/Redo",
+    "footer": "Multi-page support • Zoom • Undo/Redo • No registration required • Works in your browser",
+    "features": {
+      "text": {
+        "title": "Text",
+        "description": "Add and edit text on your PDF"
+      },
+      "whiteout": {
+        "title": "Whiteout",
+        "description": "Cover text with white rectangles"
+      },
+      "copyArea": {
+        "title": "Copy Area",
+        "description": "Copy and move parts of your PDF"
+      }
+    },
     "comingSoon": "Coming soon",
     "nav": {
       "ariaLabel": "Main menu",
@@ -118,6 +195,7 @@
       "pdfEditor": "PDF Editor",
       "forms": "Forms",
       "translatePdf": "Translate PDF",
+      "pricing": "Pricing",
       "login": "Log in"
     },
     "tools": {
@@ -157,7 +235,227 @@
       "protectPdf": "Protect PDF",
       "signPdf": "Sign PDF",
       "redactPdf": "Redact PDF",
-      "comparePdf": "Compare PDF"
+      "comparePdf": "Compare PDF",
+      "tooltips": {
+        "mergePdf": "Combine multiple PDFs into one document",
+        "splitPdf": "Separate a PDF into multiple files",
+        "removePages": "Delete unwanted pages from your PDF",
+        "extractPages": "Save specific pages as a new PDF",
+        "organizePdf": "Reorder, rotate, and delete pages",
+        "scanToPdf": "Create a PDF from your camera or scanner",
+        "compressPdf": "Reduce file size while keeping quality",
+        "repairPdf": "Fix corrupted or damaged PDF files",
+        "ocrPdf": "Make scanned text searchable and selectable",
+        "jpgToPdf": "Convert images to PDF format",
+        "wordToPdf": "Convert Word documents to PDF",
+        "powerpointToPdf": "Convert PowerPoint presentations to PDF",
+        "excelToPdf": "Convert Excel spreadsheets to PDF",
+        "htmlToPdf": "Convert web pages to PDF",
+        "pdfToJpg": "Export PDF pages as JPG images",
+        "pdfToWord": "Convert PDF to editable Word document",
+        "pdfToPowerpoint": "Convert PDF to PowerPoint presentation",
+        "pdfToExcel": "Convert PDF tables to Excel spreadsheet",
+        "pdfToPdfA": "Convert to PDF/A for long-term archiving",
+        "rotatePdf": "Rotate pages clockwise or counter-clockwise",
+        "addPageNumbers": "Add page numbers to your document",
+        "addWatermark": "Add text or image watermark to pages",
+        "cropPdf": "Remove margins or unwanted edges",
+        "editPdf": "Add text, images, shapes, and annotations",
+        "unlockPdf": "Remove password protection from PDF",
+        "protectPdf": "Add password protection to your PDF",
+        "signPdf": "Add your signature to the document",
+        "redactPdf": "Permanently black out sensitive content",
+        "comparePdf": "Compare two PDFs side by side"
+      }
+    }
+  },
+  "tools": {
+    "input": "Input",
+    "scan": {
+      "a4": "A4"
+    },
+    "compress": {
+      "hint": "Choose a PDF to compress.",
+      "note": "Note: Compression is done by converting pages to images (text will not be selectable).",
+      "noteClient": "Custom uses browser compression (image-based PDF).",
+      "noteServerFirst": "Levels use server compression when available (keeps text). If the server is unavailable, it falls back to browser (image-based PDF).",
+      "usedServer": "Compressed by server (better PDF compression).",
+      "usedClientFallback": "Server unavailable, using browser fallback compression.",
+      "usedClientCustom": "Used browser compression (custom settings).",
+      "engineLabel": "Engine",
+      "engine": {
+        "server": "Server (PDF)",
+        "browser": "Browser (image-based PDF)",
+        "auto": "Auto (Server first)"
+      },
+      "test": {
+        "button": "Test server",
+        "running": "Testing…",
+        "ok": "OK",
+        "error": "Server test failed"
+      },
+      "reason": "Reason",
+      "customHint": "Select CUSTOM to adjust resolution/quality in the browser.",
+      "level": {
+        "label": "Compression level",
+        "extreme": {
+          "title": "EXTREME COMPRESSION",
+          "subtitle": "Less quality, high compression"
+        },
+        "recommended": {
+          "title": "RECOMMENDED COMPRESSION",
+          "subtitle": "Good quality, good compression"
+        },
+        "less": {
+          "title": "LESS COMPRESSION",
+          "subtitle": "High quality, less compression"
+        },
+        "custom": {
+          "title": "CUSTOM",
+          "subtitle": "Use sliders below"
+        }
+      },
+      "scale": "Resolution",
+      "quality": "JPEG quality",
+      "pageSize": "Output page size",
+      "original": "Original",
+      "run": "Compress"
+    },
+    "repair": {
+      "hint": "Choose a PDF to repair.",
+      "description": "Upload a corrupt PDF and we will try to fix it. Depending on how much the PDF is damaged we will be able to recover it partially or completely.",
+      "run": "Repair",
+      "success": "PDF repaired successfully!",
+      "error": "Could not repair PDF"
+    },
+    "ocr": {
+      "hint": "Choose a scanned PDF to make searchable.",
+      "description": "Upload a scanned PDF and we will recognize the text. The result is a searchable PDF where you can select and copy text.",
+      "language": "Language",
+      "run": "Run OCR",
+      "success": "PDF is now searchable!",
+      "error": "OCR failed"
+    },
+    "convert": {
+      "run": "Convert",
+      "success": "Conversion successful!",
+      "error": "Conversion failed",
+      "pageSize": "Page size",
+      "fitToImage": "Fit to image",
+      "jpgHint": "Select one or more images (JPG, PNG) to convert to PDF.",
+      "wordHint": "Select a Word document (.doc, .docx) to convert to PDF.",
+      "pptHint": "Select a PowerPoint file (.ppt, .pptx) to convert to PDF.",
+      "excelHint": "Select an Excel file (.xls, .xlsx) to convert to PDF.",
+      "htmlHint": "Select an HTML file to convert to PDF.",
+      "uploadFile": "Upload file",
+      "pasteHtml": "Paste HTML",
+      "htmlContent": "HTML Content"
+    },
+    "convertFrom": {
+      "success": "Conversion successful!",
+      "error": "Conversion failed",
+      "jpgHint": "Select a PDF to convert to JPG images.",
+      "wordHint": "Select a PDF to convert to Word document.",
+      "pptHint": "Select a PDF to convert to PowerPoint.",
+      "excelHint": "Select a PDF to convert to Excel.",
+      "pdfaHint": "Select a PDF to convert to PDF/A format for archiving.",
+      "pdfaDescription": "PDF/A is an ISO-standardized format for long-term digital document preservation."
+    },
+    "edit": {
+      "error": "Operation failed",
+      "rotateHint": "Select a PDF to rotate pages.",
+      "rotation": "Rotation",
+      "clockwise": "clockwise",
+      "counterclockwise": "90° counter-clockwise",
+      "applyTo": "Apply to",
+      "allPages": "All pages",
+      "customPages": "Custom pages",
+      "pageRange": "Page range (e.g. 1,3,5-8)",
+      "rotate": "Rotate",
+      "rotateSuccess": "PDF rotated successfully!",
+      "pageNumbersHint": "Select a PDF to add page numbers.",
+      "position": "Position",
+      "bottomCenter": "Bottom center",
+      "bottomLeft": "Bottom left",
+      "bottomRight": "Bottom right",
+      "topCenter": "Top center",
+      "topLeft": "Top left",
+      "topRight": "Top right",
+      "center": "Center",
+      "format": "Format",
+      "startNumber": "Start at",
+      "addNumbers": "Add numbers",
+      "pageNumbersSuccess": "Page numbers added!",
+      "watermarkHint": "Select a PDF to add a watermark.",
+      "watermarkText": "Watermark text",
+      "addWatermark": "Add watermark",
+      "watermarkSuccess": "Watermark added!",
+      "cropHint": "Select a PDF to crop.",
+      "margins": "Margins (points)",
+      "top": "Top",
+      "right": "Right",
+      "bottom": "Bottom",
+      "left": "Left",
+      "marginHint": "72 points = 1 inch. Enter how much to crop from each edge.",
+      "crop": "Crop",
+      "cropSuccess": "PDF cropped successfully!",
+      "editHint": "Select a PDF to open in the full editor where you can add text, whiteout, shapes, and more."
+    },
+    "security": {
+      "error": "Operation failed",
+      "unlockHint": "Select a password-protected PDF to unlock.",
+      "password": "Password",
+      "enterPassword": "Enter PDF password",
+      "unlock": "Unlock",
+      "unlockSuccess": "PDF unlocked successfully!",
+      "protectHint": "Select a PDF to protect with a password.",
+      "userPassword": "User password",
+      "ownerPassword": "Owner password",
+      "openPassword": "Required to open",
+      "editPassword": "Required to edit",
+      "userPasswordDesc": "Required to open the PDF. Leave empty if anyone can open it.",
+      "ownerPasswordDesc": "Required to edit/print. If empty, the user password is used for both.",
+      "passwordHint": "User password is required to open the PDF. Owner password restricts editing/printing.",
+      "protect": "Protect",
+      "protectSuccess": "PDF protected successfully!",
+      "signHint": "Select a PDF to sign.",
+      "drawSignature": "Draw your signature",
+      "signaturePage": "Place on page",
+      "sign": "Sign PDF",
+      "signSuccess": "PDF signed successfully!",
+      "redactHint": "Select a PDF and draw rectangles over text to redact.",
+      "redactionAreas": "redaction area(s)",
+      "redact": "Redact",
+      "redactSuccess": "PDF redacted successfully!",
+      "compareHint": "Select two PDF files to compare them side by side.",
+      "document1": "Document 1",
+      "document2": "Document 2",
+      "selectFirst": "Select first PDF",
+      "selectSecond": "Select second PDF",
+      "noPage": "No page"
+    },
+    "translate": {
+      "hint": "Select a PDF to translate.",
+      "description": "Upload a PDF and translate its text content to another language using AI.",
+      "targetLanguage": "Target language",
+      "run": "Translate",
+      "success": "PDF translated successfully!",
+      "error": "Translation failed",
+      "askAboutPdf": "Ask about this PDF",
+      "chatPlaceholder": "Ask a question...",
+      "chooseMode": "Choose translation mode",
+      "summarize": "Summarize",
+      "summarizeDesc": "Extract key information",
+      "translateFull": "Translate Full",
+      "translateFullDesc": "Translate entire document",
+      "summary": "Summary",
+      "fullTranslation": "Full Translation",
+      "changeMode": "Change mode",
+      "waitingForText": "Extracting text from PDF...",
+      "suggestion1": "What is this document about?",
+      "suggestion2": "Summarize the key points",
+      "suggestion3": "What are the important dates?",
+      "suggestion4": "What amounts are mentioned?"
     }
   },
   "floatingControlBar": {
@@ -242,7 +540,16 @@
     "organize": "Organize pages",
     "duplicate": "Duplicate",
     "moveUp": "Move up",
-    "moveDown": "Move down"
+    "moveDown": "Move down",
+    "save": "Save",
+    "cancel": "Cancel",
+    "rotateLeft": "Rotate Left",
+    "rotateRight": "Rotate Right",
+    "addPage": "New Page",
+    "move": "Move",
+    "moveBefore": "Move Before",
+    "moveAfter": "Move After",
+    "importDocument": "Import Document"
   },
   "comments": {
     "addComment": "Comment",
@@ -257,6 +564,80 @@
     "pressEnter": "Press Enter to save, Esc to cancel",
     "noReplies": "No replies yet",
     "replies": "{{count}} replies"
+  },
+  "ocrBanner": {
+    "message": "Your document contains unrecognized text. Would you like to apply OCR to make it editable?",
+    "button": "Make editable"
+  },
+  "upload": {
+    "uploading": "Your file is uploading"
+  },
+  "mobileWarning": {
+    "title": "Best on desktop",
+    "message": "For the best editing experience, we recommend using a computer or tablet.",
+    "dismiss": "Dismiss"
+  },
+  "pricing": {
+    "title": "Choose Your Plan",
+    "subtitle": "Start for free, upgrade when you need more",
+    "popular": "Most Popular",
+    "plans": {
+      "trial": {
+        "name": "Trial",
+        "price": "Free",
+        "period": "",
+        "description": "Try PDFMoment with limited features",
+        "features": [
+          "3 PDF operations per day",
+          "Basic editing tools",
+          "Standard quality exports"
+        ],
+        "button": "Get Started"
+      },
+      "basic": {
+        "name": "Basic",
+        "price": "$9",
+        "period": "/month",
+        "description": "For individuals who need more power",
+        "features": [
+          "50 PDF operations per day",
+          "All editing tools",
+          "High quality exports",
+          "Priority processing"
+        ],
+        "button": "Start Basic"
+      },
+      "pro": {
+        "name": "Pro",
+        "price": "$19",
+        "period": "/month",
+        "description": "Unlimited access for professionals",
+        "features": [
+          "Unlimited PDF operations",
+          "All editing tools",
+          "Maximum quality exports",
+          "Priority processing",
+          "API access"
+        ],
+        "button": "Go Pro"
+      }
+    }
+  },
+  "howItWorks": {
+    "title": "How PDFMoment Works",
+    "steps": {
+      "1": {
+        "title": "Upload",
+        "description": "Drag & drop your PDF file or select from your device."
+      },
+      "2": {
+        "title": "Edit & Capture",
+        "description": "Use our powerful tools to edit, sign, or transform your document."
+      },
+      "3": {
+        "title": "Download",
+        "description": "Save your polished PDF moment and share it instantly."
+      }
+    }
   }
 }
-

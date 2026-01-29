@@ -32,6 +32,20 @@
       <artifactId>pdfbox</artifactId>
       <version>${pdfbox.version}</version>
     </dependency>
+
+    <!-- Apache POI for Office documents -->
+    <dependency>
+      <groupId>org.apache.poi</groupId>
+      <artifactId>poi-ooxml</artifactId>
+      <version>5.2.5</version>
+    </dependency>
+
+    <!-- Flying Saucer for HTML to PDF -->
+    <dependency>
+      <groupId>org.xhtmlrenderer</groupId>
+      <artifactId>flying-saucer-pdf-itext5</artifactId>
+      <version>9.1.22</version>
+    </dependency>
   </dependencies>
 
   <build>

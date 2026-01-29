@@ -1,0 +1,244 @@
+.editorToolbar {
+    padding: 8px 12px;
+    background-color: var(--nav-bg);
+    border-bottom: 1px solid var(--border-color);
+    transition: background-color 0.2s ease, border-color 0.2s ease;
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    flex-wrap: wrap;
+    z-index: 100;
+    position: relative;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    backdrop-filter: blur(10px);
+}
+
+.editorToolbar__group {
+    display: flex;
+    gap: 2px;
+    align-items: center;
+    padding: 0 4px;
+}
+
+.editorToolbar__group--separated {
+    border-right: 1px solid var(--border-color);
+    padding-right: 12px;
+    margin-right: 8px;
+}
+
+.editorToolbar__group--right {
+    margin-left: auto;
+}
+
+.editorToolbar__btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    padding: 6px 10px;
+    min-width: 56px;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 500;
+    transition: all 0.15s ease;
+    position: relative;
+}
+
+.editorToolbar__btn:hover {
+    background-color: var(--bg-card-hover);
+    color: var(--text-primary);
+}
+
+.editorToolbar__btn--active {
+    background-color: var(--brand-glow);
+    color: var(--brand-primary);
+}
+
+.editorToolbar__btn--active:hover {
+    background-color: var(--brand-glow);
+}
+
+.editorToolbar__btn--danger {
+    color: #dc3545;
+}
+
+.editorToolbar__btn--danger:hover {
+    background-color: rgba(220, 53, 69, 0.1);
+}
+
+.editorToolbar__btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.editorToolbar__btn:disabled:hover {
+    background: transparent;
+}
+
+.editorToolbar__icon {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.editorToolbar__icon svg {
+    width: 18px;
+    height: 18px;
+    stroke-width: 1.8;
+}
+
+.editorToolbar__label {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 60px;
+}
+
+/* Dropdown styles */
+.editorToolbar__dropdown {
+    position: relative;
+}
+
+.editorToolbar__dropdownMenu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 4px;
+    background-color: var(--bg-menu);
+    /* Themed solid background */
+    border: 1px solid var(--border-menu);
+    /* Themed border */
+    border-radius: 8px;
+    padding: 4px;
+    z-index: 1000;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+    min-width: 140px;
+    backdrop-filter: none;
+}
+
+.editorToolbar__dropdownItem {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: none;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    color: var(--text-primary);
+    font-size: 13px;
+    width: 100%;
+    text-align: left;
+    transition: background-color 0.15s ease;
+}
+
+.editorToolbar__dropdownItem:hover {
+    background-color: var(--bg-card-hover);
+}
+
+.editorToolbar__dropdownItem--active {
+    background-color: var(--brand-glow);
+    color: var(--brand-primary);
+}
+
+/* Back button special style */
+.editorToolbar__backBtn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--text-primary);
+    font-size: 13px;
+    font-weight: 500;
+    transition: all 0.15s ease;
+}
+
+.editorToolbar__backBtn:hover {
+    background-color: var(--bg-card-hover);
+    border-color: var(--border-hover);
+}
+
+
+
+/* Compact mode for smaller screens */
+@media (max-width: 1200px) {
+    .editorToolbar__btn {
+        min-width: 48px;
+        padding: 6px 8px;
+    }
+
+    .editorToolbar__label {
+        font-size: 10px;
+    }
+}
+
+@media (max-width: 900px) {
+    .editorToolbar__label {
+        display: none;
+    }
+
+    .editorToolbar__btn {
+        min-width: 40px;
+        padding: 8px;
+    }
+}
+
+/* Small mobile devices */
+@media (max-width: 600px) {
+    .editorToolbar {
+        padding: 6px 8px;
+        gap: 2px;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .editorToolbar__group {
+        padding: 0 2px;
+    }
+
+    .editorToolbar__group--separated {
+        padding-right: 8px;
+        margin-right: 4px;
+    }
+
+    .editorToolbar__btn {
+        min-width: 36px;
+        padding: 8px 6px;
+    }
+
+    .editorToolbar__icon {
+        width: 18px;
+        height: 18px;
+    }
+
+    .editorToolbar__icon svg {
+        width: 16px;
+        height: 16px;
+    }
+
+    .editorToolbar__backBtn {
+        padding: 6px 10px;
+        font-size: 12px;
+    }
+
+    .editorToolbar__dropdownMenu {
+        min-width: 120px;
+        padding: 3px;
+    }
+
+    .editorToolbar__dropdownItem {
+        padding: 8px 10px;
+        font-size: 12px;
+    }
+}

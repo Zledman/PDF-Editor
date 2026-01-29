@@ -1,0 +1,171 @@
+.uploadProgressOverlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(43, 46, 56, 0.4);
+    /* Softer dark overlay */
+    backdrop-filter: blur(8px);
+    /* Increased blur */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10001;
+    animation: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+.uploadProgressCard {
+    background: white;
+    border-radius: 20px;
+    /* Slightly more rounded */
+    padding: 60px 80px;
+    /* Larger padding like in the image */
+    min-width: 500px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 32px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.08);
+    /* Softer, more spread shadow */
+    animation: scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes scaleIn {
+    from {
+        opacity: 0;
+        transform: scale(0.95) translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+.uploadProgressIconWrapper {
+    width: 100px;
+    height: 100px;
+    background: white;
+    /* White background for the circle itself? No, looking at image it's a very light glow */
+    background: radial-gradient(circle at center, #fff8f5 0%, #ffffff 70%);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 20px rgba(255, 107, 53, 0.15);
+}
+
+.uploadProgressIcon {
+    width: 48px;
+    height: 48px;
+    color: #ff6b35;
+    stroke-width: 1.5px;
+    filter: drop-shadow(0 4px 6px rgba(255, 107, 53, 0.2));
+    animation: float 2s ease-in-out infinite;
+}
+
+@keyframes float {
+
+    0%,
+    100% {
+        transform: translateY(0);
+    }
+
+    50% {
+        transform: translateY(-4px);
+    }
+}
+
+.uploadProgressText {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 20px;
+    font-weight: 600;
+    color: #000000;
+    /* Darker, cleaner text color */
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    letter-spacing: -0.01em;
+}
+
+.uploadProgressPercent {
+    color: #ff6b35;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.uploadProgressBarTrack {
+    width: 100%;
+    height: 16px;
+    /* Taller track */
+    background: #f0f0f0;
+    border-radius: 99px;
+    /* Pill shape */
+    position: relative;
+    overflow: hidden;
+    /* Hide overflow for pill shape fill */
+}
+
+/* We use a different structure for the pill shape bar in the image */
+.uploadProgressBarFill {
+    height: 100%;
+    background: #ff6b35;
+    /* Fallback */
+    background: linear-gradient(90deg, #ff6b35 0%, #ff4f19 100%);
+    border-radius: 99px;
+    transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    position: relative;
+}
+
+/* The dot is likely part of the fill or just the end of the capped fill */
+/* But let's keep the dot if requested or if it looks better. The image shows a pill shape bar, usually the dot is on a thin line. */
+/* Looking at the image again: it's a thicker grey track with a blue fill that has a rounded end. And maybe a separate dot? */
+/* Actually, let's go for a clean pill shape fill without the separate popping dot, or a subtle one inside. */
+/* The reference image has a "dot" at the end of the blue bar. */
+/* The dot/thumb at the end of the progress bar */
+.uploadProgressBarTrack {
+    overflow: visible;
+    /* Need visible for the thumb to stick out */
+}
+
+.uploadProgressBarDot {
+    display: block;
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 24px;
+    /* Slightly larger thumb */
+    height: 24px;
+    background: #ff6b35;
+    border-radius: 50%;
+    box-shadow: 0 0 0 4px #ffffff, 0 4px 12px rgba(0, 0, 0, 0.15);
+    /* Thicker white ring and better shadow */
+    transition: left 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    z-index: 2;
+}
+
+
+/* Responsive */
+@media (max-width: 600px) {
+    .uploadProgressCard {
+        min-width: unset;
+        width: 90%;
+        padding: 40px 24px;
+        gap: 24px;
+    }
+
+    .uploadProgressText {
+        font-size: 18px;
+    }
+}

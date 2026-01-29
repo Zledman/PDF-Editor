@@ -16,6 +16,9 @@
     "delete": "Ta bort",
     "undo": "Ångra",
     "redo": "Gör om",
+    "zoomIn": "Zooma in",
+    "zoomOut": "Zooma ut",
+    "crop": "Beskär PDF",
     "zoom": "Zoom",
     "previous": "Föregående",
     "next": "Nästa",
@@ -43,11 +46,63 @@
     "imageReady": "Dra för att placera bilden",
     "mode": "Läge",
     "highlightRect": "Markera yta",
+    "pen": "Penna",
     "highlightFreehand": "Frihand highlight",
     "highlightColor": "Highlight-färg",
     "opacity": "Opacitet",
     "stroke": "Bredd",
-    "eraser": "Raderare"
+    "eraser": "Raderare",
+    "ocr": "OCR",
+    "ocrHint": "Kör OCR för att göra skannad text redigerbar",
+    "cross": "Cross",
+    "crossHint": "Placera ett kryss (X) på PDF:en",
+    "check": "Check",
+    "checkHint": "Placera en bock (✓) på PDF:en",
+    "search": "Sök",
+    "searchHint": "Sök efter text i PDF:en (Ctrl+F)",
+    "moreTools": "Fler verktyg",
+    "measure": "Mätverktyg",
+    "stamp": "Stämpel",
+    "notes": "Anteckningar",
+    "tooltips": {
+      "newPdf": "Gå tillbaka till startsidan",
+      "addText": "Klicka på PDF:en för att lägga till text",
+      "editText": "Klicka på en textbox för att redigera den",
+      "ocr": "Kör OCR för att göra skannad text redigerbar",
+      "search": "Sök efter text i PDF:en (Ctrl+F)",
+      "whiteout": "Täck över innehåll med en vit ruta",
+      "comment": "Lägg till en kommentar på PDF:en",
+      "cross": "Placera ett kryss (X) på PDF:en",
+      "check": "Placera en bock (✓) på PDF:en",
+      "copyArea": "Kopiera och klistra in ett område från PDF:en",
+      "image": "Välj en bild (PNG/JPG) och placera på sidan",
+      "imageReady": "Dra för att placera bilden",
+      "highlight": "Markera text med färg",
+      "pen": "Rita fritt på PDF:en",
+      "shapes": "Rita former som rektanglar, cirklar, linjer och pilar",
+      "pan": "Dra för att flytta PDF:en",
+      "eraser": "Radera element genom att klicka på dem",
+      "delete": "Ta bort markerat element",
+      "pageLayout": "Ändra hur PDF:en visas",
+      "download": "Ladda ner eller exportera PDF:en",
+      "moreTools": "Visa fler verktyg",
+      "crop": "Rita en region för att beskära sidan"
+    }
+  },
+  "search": {
+    "placeholder": "Sök i dokumentet...",
+    "noResults": "Inga träffar",
+    "previous": "Föregående träff",
+    "next": "Nästa träff",
+    "close": "Stäng"
+  },
+  "crop": {
+    "title": "Beskär PDF",
+    "confirmMessage": "Är du säker på att du vill beskära sidan till det markerade området? Detta kan inte ångras.",
+    "applyToCurrent": "Endast denna sida",
+    "applyToAll": "Alla sidor",
+    "cancel": "Avbryt",
+    "confirm": "Beskär"
   },
   "textSidebar": {
     "size": "Storlek",
@@ -71,6 +126,13 @@
     "strokeWidth": "Linjetjocklek",
     "selectColor": "Välj färg",
     "preview": "Förhandsgranskning"
+  },
+  "penSidebar": {
+    "color": "Färg",
+    "size": "Storlek",
+    "opacity": "Opacitet",
+    "clear": "Rensa",
+    "confirmClear": "Är du säker på att du vill rensa alla pennstreck?"
   },
   "commentSidebar": {
     "color": "Färg",
@@ -98,8 +160,9 @@
     "darkGreen": "Mörkgrön"
   },
   "landingPage": {
-    "title": "PDF Editor",
-    "subtitle": "Redigera dina PDF-filer med text, whiteout och kopiera område-verktyg",
+    "title": "PDFMoment",
+    "earlyAccess": "Early Access",
+    "subtitle": "Vi bygger aktivt en komplett PDF-verktygslåda. Testa våra verktyg idag och hjälp forma framtidens dokumenthantering.",
     "getStarted": "Kom igång",
     "openUploader": "Öppna uppladdning",
     "chooseFile": "Välj fil",
@@ -109,7 +172,21 @@
     "orClick": "eller klicka för att välja",
     "createNew": "Skapa ny PDF",
     "createNewHint": "Skapa ett tomt dokument och börja från grunden",
-    "footer": "Stöd för flera sidor • Zoom-funktion • Undo/Redo",
+    "footer": "Stöd för flera sidor • Zoom-funktion • Undo/Redo • Ingen registrering krävs • Fungerar i webbläsaren",
+    "features": {
+      "text": {
+        "title": "Text",
+        "description": "Lägg till och redigera text på din PDF"
+      },
+      "whiteout": {
+        "title": "Whiteout",
+        "description": "Täck över text med vita rektanglar"
+      },
+      "copyArea": {
+        "title": "Kopiera område",
+        "description": "Kopiera och flytta delar av PDF:en"
+      }
+    },
     "comingSoon": "Kommer snart",
     "nav": {
       "ariaLabel": "Huvudmeny",
@@ -118,6 +195,7 @@
       "pdfEditor": "PDF Editor",
       "forms": "Forms",
       "translatePdf": "Translate PDF",
+      "pricing": "Priser",
       "login": "Logga in"
     },
     "tools": {
@@ -157,7 +235,227 @@
       "protectPdf": "Protect PDF",
       "signPdf": "Sign PDF",
       "redactPdf": "Redact PDF",
-      "comparePdf": "Compare PDF"
+      "comparePdf": "Compare PDF",
+      "tooltips": {
+        "mergePdf": "Slå ihop flera PDF:er till ett dokument",
+        "splitPdf": "Dela upp en PDF i flera filer",
+        "removePages": "Ta bort oönskade sidor från din PDF",
+        "extractPages": "Spara specifika sidor som en ny PDF",
+        "organizePdf": "Ordna om, rotera och ta bort sidor",
+        "scanToPdf": "Skapa en PDF från kamera eller skanner",
+        "compressPdf": "Minska filstorleken med bibehållen kvalitet",
+        "repairPdf": "Reparera skadade PDF-filer",
+        "ocrPdf": "Gör skannad text sökbar och markerbar",
+        "jpgToPdf": "Konvertera bilder till PDF-format",
+        "wordToPdf": "Konvertera Word-dokument till PDF",
+        "powerpointToPdf": "Konvertera PowerPoint-presentationer till PDF",
+        "excelToPdf": "Konvertera Excel-kalkylblad till PDF",
+        "htmlToPdf": "Konvertera webbsidor till PDF",
+        "pdfToJpg": "Exportera PDF-sidor som JPG-bilder",
+        "pdfToWord": "Konvertera PDF till redigerbart Word-dokument",
+        "pdfToPowerpoint": "Konvertera PDF till PowerPoint-presentation",
+        "pdfToExcel": "Konvertera PDF-tabeller till Excel-kalkylblad",
+        "pdfToPdfA": "Konvertera till PDF/A för långtidsarkivering",
+        "rotatePdf": "Rotera sidor medurs eller moturs",
+        "addPageNumbers": "Lägg till sidnummer i ditt dokument",
+        "addWatermark": "Lägg till text- eller bildvattenstämpel",
+        "cropPdf": "Ta bort marginaler eller oönskade kanter",
+        "editPdf": "Lägg till text, bilder, former och anteckningar",
+        "unlockPdf": "Ta bort lösenordsskydd från PDF",
+        "protectPdf": "Lägg till lösenordsskydd på din PDF",
+        "signPdf": "Lägg till din signatur i dokumentet",
+        "redactPdf": "Svärta permanent känsligt innehåll",
+        "comparePdf": "Jämför två PDF:er sida vid sida"
+      }
+    }
+  },
+  "tools": {
+    "input": "Indata",
+    "scan": {
+      "a4": "A4"
+    },
+    "compress": {
+      "hint": "Välj en PDF att komprimera.",
+      "note": "Obs: Komprimering görs genom att konvertera sidor till bilder (texten blir inte markerbar).",
+      "noteClient": "ANPASSAD använder webbläsaren (bildbaserad PDF).",
+      "noteServerFirst": "Nivåerna använder serverkomprimering när den finns (behåller text). Om servern inte är tillgänglig används webbläsaren som fallback (bildbaserad PDF).",
+      "usedServer": "Komprimerad av servern (bättre PDF-komprimering).",
+      "usedClientFallback": "Servern är inte tillgänglig, använder webbläsaren som fallback.",
+      "usedClientCustom": "Använder webbläsaren (egna inställningar).",
+      "engineLabel": "Motor",
+      "engine": {
+        "server": "Server (PDF)",
+        "browser": "Webbläsare (bildbaserad PDF)",
+        "auto": "Auto (server först)"
+      },
+      "test": {
+        "button": "Testa server",
+        "running": "Testar…",
+        "ok": "OK",
+        "error": "Servertest misslyckades"
+      },
+      "reason": "Orsak",
+      "customHint": "Välj ANPASSAD för att justera upplösning/kvalitet i webbläsaren.",
+      "level": {
+        "label": "Komprimeringsnivå",
+        "extreme": {
+          "title": "EXTREM KOMPRIMERING",
+          "subtitle": "Lägre kvalitet, hög komprimering"
+        },
+        "recommended": {
+          "title": "REKOMMENDERAD KOMPRIMERING",
+          "subtitle": "Bra kvalitet, bra komprimering"
+        },
+        "less": {
+          "title": "MINDRE KOMPRIMERING",
+          "subtitle": "Hög kvalitet, mindre komprimering"
+        },
+        "custom": {
+          "title": "ANPASSAD",
+          "subtitle": "Använd reglagen nedan"
+        }
+      },
+      "scale": "Upplösning",
+      "quality": "JPEG-kvalitet",
+      "pageSize": "Utdata sidstorlek",
+      "original": "Original",
+      "run": "Komprimera"
+    },
+    "repair": {
+      "hint": "Välj en PDF att reparera.",
+      "description": "Ladda upp en skadad PDF så försöker vi fixa den. Beroende på hur skadad PDF:en är kan vi återställa den helt eller delvis.",
+      "run": "Reparera",
+      "success": "PDF reparerad!",
+      "error": "Kunde inte reparera PDF"
+    },
+    "ocr": {
+      "hint": "Välj en skanning att göra sökbar.",
+      "description": "Ladda upp en skanning så känner vi igen texten. Resultatet blir en sökbar PDF där du kan markera och kopiera text.",
+      "language": "Språk",
+      "run": "Kör OCR",
+      "success": "PDF:en är nu sökbar!",
+      "error": "OCR misslyckades"
+    },
+    "convert": {
+      "run": "Konvertera",
+      "success": "Konvertering lyckades!",
+      "error": "Konvertering misslyckades",
+      "pageSize": "Sidstorlek",
+      "fitToImage": "Anpassa till bild",
+      "jpgHint": "Välj en eller flera bilder (JPG, PNG) att konvertera till PDF.",
+      "wordHint": "Välj ett Word-dokument (.doc, .docx) att konvertera till PDF.",
+      "pptHint": "Välj en PowerPoint-fil (.ppt, .pptx) att konvertera till PDF.",
+      "excelHint": "Välj en Excel-fil (.xls, .xlsx) att konvertera till PDF.",
+      "htmlHint": "Välj en HTML-fil att konvertera till PDF.",
+      "uploadFile": "Ladda upp fil",
+      "pasteHtml": "Klistra in HTML",
+      "htmlContent": "HTML-innehåll"
+    },
+    "convertFrom": {
+      "success": "Konvertering lyckades!",
+      "error": "Konvertering misslyckades",
+      "jpgHint": "Välj en PDF att konvertera till JPG-bilder.",
+      "wordHint": "Välj en PDF att konvertera till Word-dokument.",
+      "pptHint": "Välj en PDF att konvertera till PowerPoint.",
+      "excelHint": "Välj en PDF att konvertera till Excel.",
+      "pdfaHint": "Välj en PDF att konvertera till PDF/A-format för arkivering.",
+      "pdfaDescription": "PDF/A är ett ISO-standardiserat format för långsiktig digital dokumentbevarande."
+    },
+    "edit": {
+      "error": "Åtgärden misslyckades",
+      "rotateHint": "Välj en PDF att rotera sidor.",
+      "rotation": "Rotation",
+      "clockwise": "medurs",
+      "counterclockwise": "90° moturs",
+      "applyTo": "Tillämpa på",
+      "allPages": "Alla sidor",
+      "customPages": "Anpassade sidor",
+      "pageRange": "Sidintervall (t.ex. 1,3,5-8)",
+      "rotate": "Rotera",
+      "rotateSuccess": "PDF roterades!",
+      "pageNumbersHint": "Välj en PDF att lägga till sidnummer.",
+      "position": "Position",
+      "bottomCenter": "Nedre mitten",
+      "bottomLeft": "Nedre vänster",
+      "bottomRight": "Nedre höger",
+      "topCenter": "Övre mitten",
+      "topLeft": "Övre vänster",
+      "topRight": "Övre höger",
+      "center": "Mitten",
+      "format": "Format",
+      "startNumber": "Börja på",
+      "addNumbers": "Lägg till nummer",
+      "pageNumbersSuccess": "Sidnummer lades till!",
+      "watermarkHint": "Välj en PDF att lägga till vattenstämpel.",
+      "watermarkText": "Vattenstämpeltext",
+      "addWatermark": "Lägg till vattenstämpel",
+      "watermarkSuccess": "Vattenstämpel lades till!",
+      "cropHint": "Välj en PDF att beskära.",
+      "margins": "Marginaler (punkter)",
+      "top": "Topp",
+      "right": "Höger",
+      "bottom": "Botten",
+      "left": "Vänster",
+      "marginHint": "72 punkter = 1 tum. Ange hur mycket som ska beskäras från varje kant.",
+      "crop": "Beskär",
+      "cropSuccess": "PDF beskars!",
+      "editHint": "Välj en PDF att öppna i fullständig redigerare där du kan lägga till text, whiteout, former och mer."
+    },
+    "security": {
+      "error": "Åtgärden misslyckades",
+      "unlockHint": "Välj en lösenordsskyddad PDF att låsa upp.",
+      "password": "Lösenord",
+      "enterPassword": "Ange PDF-lösenord",
+      "unlock": "Lås upp",
+      "unlockSuccess": "PDF låstes upp!",
+      "protectHint": "Välj en PDF att skydda med lösenord.",
+      "userPassword": "Användarlösenord",
+      "ownerPassword": "Ägarlösenord",
+      "openPassword": "Krävs för att öppna",
+      "editPassword": "Krävs för att redigera",
+      "userPasswordDesc": "Krävs för att öppna PDF:en. Lämna tomt om vem som helst får öppna.",
+      "ownerPasswordDesc": "Krävs för att redigera/skriva ut. Om tomt används användarlösenordet för båda.",
+      "passwordHint": "Användarlösenord krävs för att öppna. Ägarlösenord begränsar redigering/utskrift.",
+      "protect": "Skydda",
+      "protectSuccess": "PDF skyddades!",
+      "signHint": "Välj en PDF att signera.",
+      "drawSignature": "Rita din signatur",
+      "signaturePage": "Placera på sida",
+      "sign": "Signera PDF",
+      "signSuccess": "PDF signerades!",
+      "redactHint": "Välj en PDF och rita rektanglar över text för att svärta.",
+      "redactionAreas": "sväringsområde(n)",
+      "redact": "Svärta",
+      "redactSuccess": "PDF svärtades!",
+      "compareHint": "Välj två PDF-filer för att jämföra dem sida vid sida.",
+      "document1": "Dokument 1",
+      "document2": "Dokument 2",
+      "selectFirst": "Välj första PDF",
+      "selectSecond": "Välj andra PDF",
+      "noPage": "Ingen sida"
+    },
+    "translate": {
+      "hint": "Välj en PDF att översätta.",
+      "description": "Ladda upp en PDF och översätt textinnehållet till ett annat språk med AI.",
+      "targetLanguage": "Målspråk",
+      "run": "Översätt",
+      "success": "PDF översattes!",
+      "error": "Översättning misslyckades",
+      "askAboutPdf": "Fråga om denna PDF",
+      "chatPlaceholder": "Ställ en fråga...",
+      "chooseMode": "Välj översättningsläge",
+      "summarize": "Sammanfatta",
+      "summarizeDesc": "Extrahera viktig information",
+      "translateFull": "Översätt allt",
+      "translateFullDesc": "Översätt hela dokumentet",
+      "summary": "Sammanfattning",
+      "fullTranslation": "Full översättning",
+      "changeMode": "Byt läge",
+      "waitingForText": "Extraherar text från PDF...",
+      "suggestion1": "Vad handlar dokumentet om?",
+      "suggestion2": "Sammanfatta de viktigaste punkterna",
+      "suggestion3": "Vilka datum nämns?",
+      "suggestion4": "Vilka belopp nämns?"
     }
   },
   "floatingControlBar": {
@@ -242,7 +540,16 @@
     "organize": "Ordna sidor",
     "duplicate": "Duplicera",
     "moveUp": "Flytta upp",
-    "moveDown": "Flytta ner"
+    "moveDown": "Flytta ner",
+    "save": "Spara",
+    "cancel": "Avbryt",
+    "rotateLeft": "Rotera vänster",
+    "rotateRight": "Rotera höger",
+    "addPage": "Ny sida",
+    "move": "Flytta",
+    "moveBefore": "Flytta före",
+    "moveAfter": "Flytta efter",
+    "importDocument": "Importera dokument"
   },
   "comments": {
     "addComment": "Kommentar",
@@ -257,6 +564,80 @@
     "pressEnter": "Tryck Enter för att spara, Esc för att avbryta",
     "noReplies": "Inga svar ännu",
     "replies": "{{count}} svar"
+  },
+  "ocrBanner": {
+    "message": "Ditt dokument innehåller oigenkännlig text. Vill du köra OCR för att göra den redigerbar?",
+    "button": "Gör redigerbar"
+  },
+  "upload": {
+    "uploading": "Din fil laddas upp"
+  },
+  "mobileWarning": {
+    "title": "Bäst på desktop",
+    "message": "För bästa redigeringsupplevelse rekommenderar vi en dator eller surfplatta.",
+    "dismiss": "Stäng"
+  },
+  "pricing": {
+    "title": "Välj Din Plan",
+    "subtitle": "Börja gratis, uppgradera när du behöver mer",
+    "popular": "Mest Populär",
+    "plans": {
+      "trial": {
+        "name": "Trial",
+        "price": "Gratis",
+        "period": "",
+        "description": "Testa PDFMoment med begränsade funktioner",
+        "features": [
+          "3 PDF-operationer per dag",
+          "Grundläggande redigeringsverktyg",
+          "Standard kvalitetsexport"
+        ],
+        "button": "Kom igång"
+      },
+      "basic": {
+        "name": "Basic",
+        "price": "99 kr",
+        "period": "/månad",
+        "description": "För privatpersoner som behöver mer kraft",
+        "features": [
+          "50 PDF-operationer per dag",
+          "Alla redigeringsverktyg",
+          "Högkvalitetsexport",
+          "Prioriterad bearbetning"
+        ],
+        "button": "Starta Basic"
+      },
+      "pro": {
+        "name": "Pro",
+        "price": "199 kr",
+        "period": "/månad",
+        "description": "Obegränsad tillgång för professionella",
+        "features": [
+          "Obegränsade PDF-operationer",
+          "Alla redigeringsverktyg",
+          "Maximal kvalitetsexport",
+          "Prioriterad bearbetning",
+          "API-åtkomst"
+        ],
+        "button": "Uppgradera till Pro"
+      }
+    }
+  },
+  "howItWorks": {
+    "title": "Så fungerar PDFMoment",
+    "steps": {
+      "1": {
+        "title": "Ladda upp",
+        "description": "Dra och släpp din PDF-fil eller välj från din enhet."
+      },
+      "2": {
+        "title": "Redigera & Fånga",
+        "description": "Använd våra kraftfulla verktyg för att redigera, signera eller omvandla ditt dokument."
+      },
+      "3": {
+        "title": "Ladda ner",
+        "description": "Spara ditt färdiga PDF-ögonblick och dela det direkt."
+      }
+    }
   }
 }
-

@@ -9,9 +9,10 @@ import * as pdfjsLib from 'pdfjs-dist';
  * @param {Array} patchBoxes - Array av patch-objekt {sourceRect, targetRect, imageData}
  * @param {Array} shapeBoxes - Array av shapes (inkl highlight-ytor)
  * @param {Array} highlightStrokes - Array av frihand-highlights {points:[{x,y}], color, opacity, strokeWidth, pageIndex}
+ * @param {Array} penStrokes - Array av frihand-penn-streck
  * @returns {Promise<Uint8Array>} Redigerad PDF som Uint8Array
  */
-export async function exportPDF(pdfData, textBoxes = [], whiteoutBoxes = [], patchBoxes = [], shapeBoxes = [], highlightStrokes = []) {
+export async function exportPDF(pdfData, textBoxes = [], whiteoutBoxes = [], patchBoxes = [], shapeBoxes = [], highlightStrokes = [], penStrokes = []) {
   // pdfData ska redan vara en kopia (skapad när PDF laddades)
   // Men för säkerhets skull skapar vi en ny kopia via Uint8Array
   // Detta säkerställer att vi alltid har en frisk ArrayBuffer
@@ -28,18 +29,18 @@ export async function exportPDF(pdfData, textBoxes = [], whiteoutBoxes = [], pat
       throw new Error('Kunde inte kopiera PDF-data: ' + error.message);
     }
   }
-  
+
   // Försök först att ladda med pdf-lib direkt
   let pdfDoc;
   let useImageBasedExport = false;
   try {
     // Försök först med ignoreEncryption och minimal parsing för att undvika korrupta objekt
-    pdfDoc = await PDFDocument.load(pdfDataCopy, { 
+    pdfDoc = await PDFDocument.load(pdfDataCopy, {
       ignoreEncryption: true,
       updateMetadata: false,
       parseSpeed: 0 // Snabbast parsing, minst validering
     });
-    
+
     // Testa om vi kan läsa sidor
     try {
       pdfDoc.getPages();
@@ -51,12 +52,12 @@ export async function exportPDF(pdfData, textBoxes = [], whiteoutBoxes = [], pat
     // Om laddning misslyckas, använd bildbaserad export
     useImageBasedExport = true;
   }
-  
+
   // Om pdf-lib inte kan hantera PDF:en, använd bildbaserad export med PDF.js
   if (useImageBasedExport) {
-    return await exportPDFAsImages(pdfDataCopy, textBoxes, whiteoutBoxes, patchBoxes, shapeBoxes, highlightStrokes);
+    return await exportPDFAsImages(pdfDataCopy, textBoxes, whiteoutBoxes, patchBoxes, shapeBoxes, highlightStrokes, penStrokes);
   }
-  
+
   // Hämta sidor
   const pages = pdfDoc.getPages();
 
@@ -73,6 +74,7 @@ export async function exportPDF(pdfData, textBoxes = [], whiteoutBoxes = [], pat
     const pagePatchBoxes = patchBoxes.filter(pb => pb.pageIndex === undefined || pb.pageIndex === pageIndex);
     const pageHighlightRects = shapeBoxes.filter(sb => (sb.pageIndex === undefined || sb.pageIndex === pageIndex) && sb.type === 'highlight');
     const pageHighlightStrokes = highlightStrokes.filter(st => st.pageIndex === undefined ? pageIndex === 0 : st.pageIndex === pageIndex);
+    const pagePenStrokes = penStrokes.filter(st => st.pageIndex === undefined ? pageIndex === 0 : st.pageIndex === pageIndex);
 
     // Rita whiteout först (bakgrund)
     for (const whiteout of pageWhiteoutBoxes) {
@@ -104,14 +106,14 @@ export async function exportPDF(pdfData, textBoxes = [], whiteoutBoxes = [], pat
 
     // Rita patches (bilder)
     for (const patch of pagePatchBoxes) {
-      console.log('Exporting patch:', { 
-        hasImageData: !!patch.imageData, 
+      console.log('Exporting patch:', {
+        hasImageData: !!patch.imageData,
         hasTargetRect: !!patch.targetRect,
         imageDataType: patch.imageData ? typeof patch.imageData : 'none',
         imageDataLength: patch.imageData ? patch.imageData.length : 0,
         targetRect: patch.targetRect
       });
-      
+
       if (patch.imageData && patch.targetRect) {
         try {
           // patch.imageData är en base64 data URL (t.ex. "data:image/png;base64,...")
@@ -136,9 +138,9 @@ export async function exportPDF(pdfData, textBoxes = [], whiteoutBoxes = [], pat
             // Om det inte är en data URL, försök ladda med fetch
             imageBytes = await fetch(patch.imageData).then(res => res.arrayBuffer());
           }
-          
+
           let image;
-          
+
           // Försök ladda som PNG eller JPEG
           try {
             image = await pdfDoc.embedPng(imageBytes);
@@ -161,7 +163,7 @@ export async function exportPDF(pdfData, textBoxes = [], whiteoutBoxes = [], pat
             height: targetRect.height,
             pageHeight: height
           });
-          
+
           page.drawImage(image, {
             x: targetRect.x,
             y: height - targetRect.y - targetRect.height,
@@ -195,6 +197,29 @@ export async function exportPDF(pdfData, textBoxes = [], whiteoutBoxes = [], pat
       } catch (e) {
         // Om drawSvgPath inte stöds, hoppa över istället för att krascha export
         console.warn('Kunde inte rita frihand-highlight:', e);
+      }
+    }
+
+
+
+    // Rita pen-streck (före text, efter highlight)
+    for (const stroke of pagePenStrokes) {
+      const pts = stroke.points || [];
+      if (!pts.length) continue;
+      const opacity = typeof stroke.opacity === 'number' ? stroke.opacity : 1.0;
+      const color = hexToRgb(stroke.color || '#000000');
+      const path = pts
+        .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${height - p.y}`) // invertera y
+        .join(' ');
+      try {
+        page.drawSvgPath(path, {
+          borderColor: color,
+          borderWidth: stroke.strokeWidth || 3,
+          borderOpacity: opacity
+        });
+      } catch (e) {
+        // Om drawSvgPath inte stöds, hoppa över istället för att krascha export
+        console.warn('Kunde inte rita pen-streck:', e);
       }
     }
 
@@ -252,21 +277,21 @@ export async function exportPDF(pdfData, textBoxes = [], whiteoutBoxes = [], pat
 
       // Hantera rotation om den finns
       const rotation = textBox.rotation || 0;
-      
+
       if (rotation !== 0) {
         // Beräkna textrutans centrum
         const centerX = rect.x + rect.width / 2;
         const centerY = height - rect.y - rect.height / 2; // Invertera y-koordinaten för PDF
-        
+
         // Konvertera rotation från grader till radianer
         const rotationRad = (rotation * Math.PI) / 180;
-        
+
         // Spara grafiktillstånd, rotera, rita text, återställ
         page.pushGraphicsState();
         page.translateContent(centerX, centerY);
         page.rotateContent(rotationRad);
         page.translateContent(-centerX, -centerY);
-        
+
         for (let i = 0; i < lines.length; i++) {
           page.drawText(lines[i] ?? '', {
             x: rect.x,
@@ -276,7 +301,7 @@ export async function exportPDF(pdfData, textBoxes = [], whiteoutBoxes = [], pat
             color: rgbColor
           });
         }
-        
+
         page.popGraphicsState();
       } else {
         // Ingen rotation, rita direkt
@@ -299,32 +324,32 @@ export async function exportPDF(pdfData, textBoxes = [], whiteoutBoxes = [], pat
 /**
  * Exporterar PDF genom att rendera varje sida som bild (för korrupta PDF:er)
  */
-async function exportPDFAsImages(pdfData, textBoxes = [], whiteoutBoxes = [], patchBoxes = [], shapeBoxes = [], highlightStrokes = []) {
+async function exportPDFAsImages(pdfData, textBoxes = [], whiteoutBoxes = [], patchBoxes = [], shapeBoxes = [], highlightStrokes = [], penStrokes = []) {
   // Ladda PDF med PDF.js (kan hantera korrupta PDF:er bättre)
   const loadingTask = pdfjsLib.getDocument({ data: pdfData, ignoreEncryption: true });
   const pdfDocJs = await loadingTask.promise;
   const numPages = pdfDocJs.numPages;
-  
+
   // Skapa ny PDF med pdf-lib
   const newPdfDoc = await PDFDocument.create();
-  
+
   // Processa varje sida
   for (let pageIndex = 0; pageIndex < numPages; pageIndex++) {
     const page = await pdfDocJs.getPage(pageIndex + 1);
     const viewport = page.getViewport({ scale: 2.0 }); // Högre upplösning för bättre kvalitet
-    
+
     // Skapa canvas för att rendera PDF-sidan
     const canvas = document.createElement('canvas');
     canvas.width = viewport.width;
     canvas.height = viewport.height;
     const context = canvas.getContext('2d');
-    
+
     // Rendera PDF-sidan till canvas
     await page.render({
       canvasContext: context,
       viewport: viewport
     }).promise;
-    
+
     // Konvertera canvas till PNG
     const imageData = canvas.toDataURL('image/png');
     const base64String = imageData.split(',')[1];
@@ -333,12 +358,12 @@ async function exportPDFAsImages(pdfData, textBoxes = [], whiteoutBoxes = [], pa
     for (let i = 0; i < binaryString.length; i++) {
       imageBytes[i] = binaryString.charCodeAt(i);
     }
-    
+
     // Bädda in bilden i ny PDF
     const image = await newPdfDoc.embedPng(imageBytes);
     const { width, height } = page.getViewport({ scale: 1.0 });
     const pdfPage = newPdfDoc.addPage([width, height]);
-    
+
     // Rita PDF-sidan som bakgrund
     pdfPage.drawImage(image, {
       x: 0,
@@ -346,14 +371,15 @@ async function exportPDFAsImages(pdfData, textBoxes = [], whiteoutBoxes = [], pa
       width: width,
       height: height
     });
-    
+
     // Filtrera element för denna sida
     const pageTextBoxes = textBoxes.filter(tb => tb.pageIndex === undefined || tb.pageIndex === pageIndex);
     const pageWhiteoutBoxes = whiteoutBoxes.filter(wb => wb.pageIndex === undefined || wb.pageIndex === pageIndex);
     const pagePatchBoxes = patchBoxes.filter(pb => pb.pageIndex === undefined || pb.pageIndex === pageIndex);
     const pageHighlightRects = shapeBoxes.filter(sb => (sb.pageIndex === undefined || sb.pageIndex === pageIndex) && sb.type === 'highlight');
     const pageHighlightStrokes = highlightStrokes.filter(st => st.pageIndex === undefined ? pageIndex === 0 : st.pageIndex === pageIndex);
-    
+    const pagePenStrokes = penStrokes.filter(st => st.pageIndex === undefined ? pageIndex === 0 : st.pageIndex === pageIndex);
+
     // Rita whiteout
     for (const whiteout of pageWhiteoutBoxes) {
       const rect = whiteout.rect;
@@ -366,7 +392,7 @@ async function exportPDFAsImages(pdfData, textBoxes = [], whiteoutBoxes = [], pa
         opacity: 1.0
       });
     }
-    
+
     // Rita patches
     for (const patch of pagePatchBoxes) {
       if (patch.imageData && patch.targetRect) {
@@ -384,7 +410,7 @@ async function exportPDFAsImages(pdfData, textBoxes = [], whiteoutBoxes = [], pa
           } else {
             imageBytes = await fetch(patch.imageData).then(res => res.arrayBuffer());
           }
-          
+
           let patchImage;
           try {
             patchImage = await newPdfDoc.embedPng(imageBytes);
@@ -395,7 +421,7 @@ async function exportPDFAsImages(pdfData, textBoxes = [], whiteoutBoxes = [], pa
               continue;
             }
           }
-          
+
           const targetRect = patch.targetRect;
           pdfPage.drawImage(patchImage, {
             x: targetRect.x,
@@ -443,7 +469,27 @@ async function exportPDFAsImages(pdfData, textBoxes = [], whiteoutBoxes = [], pa
         console.warn('Kunde inte rita frihand-highlight (fallback):', e);
       }
     }
-    
+
+    // Rita pen-streck
+    for (const stroke of pagePenStrokes) {
+      const pts = stroke.points || [];
+      if (!pts.length) continue;
+      const opacity = typeof stroke.opacity === 'number' ? stroke.opacity : 1.0;
+      const color = hexToRgb(stroke.color || '#000000');
+      const path = pts
+        .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${height - p.y}`) // invertera y
+        .join(' ');
+      try {
+        pdfPage.drawSvgPath(path, {
+          borderColor: color,
+          borderWidth: stroke.strokeWidth || 3,
+          borderOpacity: opacity
+        });
+      } catch (e) {
+        console.warn('Kunde inte rita pen-streck (fallback):', e);
+      }
+    }
+
     // Rita text
     for (const textBox of pageTextBoxes) {
       const rect = textBox.rect;
@@ -451,38 +497,38 @@ async function exportPDFAsImages(pdfData, textBoxes = [], whiteoutBoxes = [], pa
       const fontFamily = textBox.fontFamily || 'Helvetica';
       const text = textBox.text || '';
       const color = textBox.color || '#000000';
-      
+
       let font;
       try {
         font = await newPdfDoc.embedFont('Helvetica');
       } catch (error) {
         font = await newPdfDoc.embedFont('Helvetica');
       }
-      
+
       const rgbColor = hexToRgb(color);
       const baselineY = height - rect.y - (fontSizePt * 0.85);
 
       const normalizedText = String(text).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
       const lines = normalizedText.split('\n');
       const lineStep = fontSizePt;
-      
+
       // Hantera rotation om den finns
       const rotation = textBox.rotation || 0;
-      
+
       if (rotation !== 0) {
         // Beräkna textrutans centrum
         const centerX = rect.x + rect.width / 2;
         const centerY = height - rect.y - rect.height / 2; // Invertera y-koordinaten för PDF
-        
+
         // Konvertera rotation från grader till radianer
         const rotationRad = (rotation * Math.PI) / 180;
-        
+
         // Spara grafiktillstånd, rotera, rita text, återställ
         pdfPage.pushGraphicsState();
         pdfPage.translateContent(centerX, centerY);
         pdfPage.rotateContent(rotationRad);
         pdfPage.translateContent(-centerX, -centerY);
-        
+
         for (let i = 0; i < lines.length; i++) {
           pdfPage.drawText(lines[i] ?? '', {
             x: rect.x,
@@ -492,7 +538,7 @@ async function exportPDFAsImages(pdfData, textBoxes = [], whiteoutBoxes = [], pa
             color: rgbColor
           });
         }
-        
+
         pdfPage.popGraphicsState();
       } else {
         // Ingen rotation, rita direkt
@@ -508,7 +554,7 @@ async function exportPDFAsImages(pdfData, textBoxes = [], whiteoutBoxes = [], pa
       }
     }
   }
-  
+
   return await newPdfDoc.save();
 }
 
@@ -519,10 +565,10 @@ function hexToRgb(hex) {
   const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
   return result
     ? rgb(
-        parseInt(result[1], 16) / 255,
-        parseInt(result[2], 16) / 255,
-        parseInt(result[3], 16) / 255
-      )
+      parseInt(result[1], 16) / 255,
+      parseInt(result[2], 16) / 255,
+      parseInt(result[3], 16) / 255
+    )
     : rgb(0, 0, 0);
 }
 

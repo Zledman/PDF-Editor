@@ -53,6 +53,47 @@ npm install
 npm run dev
 ```
 
+### (Valfritt) Starta Java-servern (text replace + server-compress)
+Det finns en Spring Boot-server i `server-java` som kör på port **8082** och exponerar:
+- `POST /replace-text` (PDFBox) – används vid export när importerad text ersätts
+- `POST /compress-pdf` (Ghostscript) – “riktig” PDF-komprimering på servern
+
+Starta den med:
+```bash
+npm run dev:server
+```
+
+#### Ghostscript (krävs för `/compress-pdf`)
+- Installera Ghostscript (Windows): hämta från Ghostscript releases.
+- Antingen:
+  - Lägg `gswin64c.exe` i PATH, **eller**
+  - Sätt env-var: `PDF_GS_PATH` till full sökväg till `gswin64c.exe` (rekommenderat).
+
+Exempel (PowerShell):
+```powershell
+setx PDF_GS_PATH "C:\Program Files\gs\gs10.xx.x\bin\gswin64c.exe"
+```
+
+Starta om `npm run dev:server` efter att du satt env-var (så processen får den).
+
+##### Snabbtest (ska ge 200 och skriva ut en PDF)
+- curl:
+```bash
+curl -v -F "file=@C:\path\to\input.pdf" "http://localhost:8082/compress-pdf?preset=ebook" --output out.pdf
+```
+- PowerShell:
+```powershell
+$uri = "http://localhost:8082/compress-pdf?preset=ebook"
+$form = @{ file = Get-Item "C:\path\to\input.pdf" }
+Invoke-WebRequest -Method Post -Uri $uri -Form $form -OutFile "out.pdf"
+```
+
+#### Frontend env-vars (valfritt)
+- `VITE_COMPRESS_SERVER_URL` (default: `http://localhost:8082/compress-pdf`)
+- `VITE_COMPRESS_SERVER_REQUIRED`
+  - `false` (dev): försök server först, fallback till browser
+  - `true` (prod): kräver server (ingen fallback)
+
 3. Öppna webbläsaren och gå till den URL som visas (vanligtvis http://localhost:5173)
 
 4. Ladda en PDF-fil via "Välj fil"-knappen

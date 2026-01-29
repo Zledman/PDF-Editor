@@ -15,18 +15,24 @@ export async function exportAsPDF(pdfData, textBoxes, whiteoutBoxes, patchBoxes,
     return { blob: new Blob([exported], { type: 'application/pdf' }), extension: 'pdf' };
   }
 
+  // PDF.js viewport-koordinater är redan i points här (eftersom vi använder scale=1 vid import).
+  // Ingen konvertering behövs.
+  const PDFJS_CSS_UNITS = 1; // Was 96/72
+  const toPdfPoints = (v) => (typeof v === 'number' ? v / PDFJS_CSS_UNITS : 0);
+  const rectToPdfPoints = (r) => ({
+    x: toPdfPoints(r?.x ?? 0),
+    y: toPdfPoints(r?.y ?? 0),
+    width: toPdfPoints(r?.width ?? 0),
+    height: toPdfPoints(r?.height ?? 0),
+  });
+
   const meta = {
     replacements: replacements.map(tb => ({
       page: (tb.pageIndex ?? 0) + 1,
-      bbox: {
-        x: tb.originalRect?.x ?? tb.rect.x,
-        y: tb.originalRect?.y ?? tb.rect.y,
-        width: tb.originalRect?.width ?? tb.rect.width,
-        height: tb.originalRect?.height ?? tb.rect.height,
-      },
+      bbox: rectToPdfPoints(tb.originalRect ?? tb.rect),
       text: tb.text || '',
       font: tb.fontFamily || 'Helvetica',
-      size: tb.fontSizePt || 12,
+      size: Math.max(1, toPdfPoints(tb.fontSizePt || 12)),
       color: tb.color || '#000000',
     })),
   };
@@ -63,7 +69,7 @@ export async function exportAsPDF(pdfData, textBoxes, whiteoutBoxes, patchBoxes,
 export async function exportAsPNG(pdfDoc, textBoxes, whiteoutBoxes, patchBoxes, currentPage = null) {
   const pages = [];
   const pagesToExport = currentPage ? [currentPage] : Array.from({ length: pdfDoc.numPages }, (_, i) => i + 1);
-  
+
   for (const pageNum of pagesToExport) {
     const page = await pdfDoc.getPage(pageNum);
     const viewport = page.getViewport({ scale: 2.0 });
@@ -71,7 +77,7 @@ export async function exportAsPNG(pdfDoc, textBoxes, whiteoutBoxes, patchBoxes, 
     canvas.width = viewport.width;
     canvas.height = viewport.height;
     const context = canvas.getContext('2d');
-    
+
     // Rendera PDF-sidan
     await page.render({
       canvasContext: context,
@@ -79,7 +85,7 @@ export async function exportAsPNG(pdfDoc, textBoxes, whiteoutBoxes, patchBoxes, 
     }).promise;
 
     // Rita whiteout-boxes
-    const pageWhiteoutBoxes = whiteoutBoxes.filter(wb => 
+    const pageWhiteoutBoxes = whiteoutBoxes.filter(wb =>
       wb.pageIndex === undefined || wb.pageIndex === pageNum - 1
     );
     for (const whiteout of pageWhiteoutBoxes) {
@@ -95,7 +101,7 @@ export async function exportAsPNG(pdfDoc, textBoxes, whiteoutBoxes, patchBoxes, 
     }
 
     // Rita patch-boxes
-    const pagePatchBoxes = patchBoxes.filter(pb => 
+    const pagePatchBoxes = patchBoxes.filter(pb =>
       pb.pageIndex === undefined || pb.pageIndex === pageNum - 1
     );
     for (const patch of pagePatchBoxes) {
@@ -107,7 +113,7 @@ export async function exportAsPNG(pdfDoc, textBoxes, whiteoutBoxes, patchBoxes, 
             img.onerror = reject;
             img.src = patch.imageData;
           });
-          
+
           const scale = 2.0;
           const rect = {
             x: patch.targetRect.x * scale,
@@ -115,7 +121,7 @@ export async function exportAsPNG(pdfDoc, textBoxes, whiteoutBoxes, patchBoxes, 
             width: patch.targetRect.width * scale,
             height: patch.targetRect.height * scale
           };
-          
+
           context.drawImage(img, rect.x, rect.y, rect.width, rect.height);
         } catch (error) {
           console.error('Fel vid rendering av patch:', error);
@@ -124,7 +130,7 @@ export async function exportAsPNG(pdfDoc, textBoxes, whiteoutBoxes, patchBoxes, 
     }
 
     // Rita text-boxes
-    const pageTextBoxes = textBoxes.filter(tb => 
+    const pageTextBoxes = textBoxes.filter(tb =>
       tb.pageIndex === undefined || tb.pageIndex === pageNum - 1
     );
     for (const textBox of pageTextBoxes) {
@@ -133,7 +139,7 @@ export async function exportAsPNG(pdfDoc, textBoxes, whiteoutBoxes, patchBoxes, 
         const fontSize = (textBox.fontSizePt || 12) * scale;
         const x = textBox.rect.x * scale;
         const y = textBox.rect.y * scale + fontSize * 0.8; // Baseline offset
-        
+
         context.font = `${textBox.fontStyle || 'normal'} ${textBox.fontWeight || 'normal'} ${fontSize}px ${textBox.fontFamily || 'Helvetica'}`;
         context.fillStyle = textBox.color || '#000000';
         context.fillText(textBox.text, x, y);
@@ -143,7 +149,7 @@ export async function exportAsPNG(pdfDoc, textBoxes, whiteoutBoxes, patchBoxes, 
     const dataUrl = canvas.toDataURL('image/png');
     pages.push({ dataUrl, pageNum });
   }
-  
+
   return { pages, extension: 'png', mimeType: 'image/png' };
 }
 
@@ -152,7 +158,7 @@ export async function exportAsPNG(pdfDoc, textBoxes, whiteoutBoxes, patchBoxes, 
  */
 export async function exportAsJPG(pdfDoc, textBoxes, whiteoutBoxes, patchBoxes, currentPage = null) {
   const pngResult = await exportAsPNG(pdfDoc, textBoxes, whiteoutBoxes, patchBoxes, currentPage);
-  
+
   // Konvertera PNG till JPG
   const jpgPages = [];
   for (const { dataUrl, pageNum } of pngResult.pages) {
@@ -162,7 +168,7 @@ export async function exportAsJPG(pdfDoc, textBoxes, whiteoutBoxes, patchBoxes, 
       img.onerror = reject;
       img.src = dataUrl;
     });
-    
+
     const canvas = document.createElement('canvas');
     canvas.width = img.width;
     canvas.height = img.height;
@@ -170,11 +176,11 @@ export async function exportAsJPG(pdfDoc, textBoxes, whiteoutBoxes, patchBoxes, 
     context.fillStyle = '#FFFFFF';
     context.fillRect(0, 0, canvas.width, canvas.height);
     context.drawImage(img, 0, 0);
-    
+
     const jpgDataUrl = canvas.toDataURL('image/jpeg', 0.9);
     jpgPages.push({ dataUrl: jpgDataUrl, pageNum });
   }
-  
+
   return { pages: jpgPages, extension: 'jpg', mimeType: 'image/jpeg' };
 }
 
@@ -183,7 +189,7 @@ export async function exportAsJPG(pdfDoc, textBoxes, whiteoutBoxes, patchBoxes, 
  */
 export async function exportAsExcel(pdfDoc, textBoxes, whiteoutBoxes, patchBoxes) {
   const workbook = XLSX.utils.book_new();
-  
+
   // Skapa ett ark med metadata
   const metadata = [
     ['PDF Export Information'],
@@ -195,7 +201,7 @@ export async function exportAsExcel(pdfDoc, textBoxes, whiteoutBoxes, patchBoxes
     [''],
     ['Textinnehåll:']
   ];
-  
+
   // Lägg till alla textrutor
   textBoxes.forEach((textBox, index) => {
     metadata.push([
@@ -206,10 +212,10 @@ export async function exportAsExcel(pdfDoc, textBoxes, whiteoutBoxes, patchBoxes
       `Storlek: ${textBox.fontSizePt || 12}pt`
     ]);
   });
-  
+
   const worksheet = XLSX.utils.aoa_to_sheet(metadata);
   XLSX.utils.book_append_sheet(workbook, worksheet, 'PDF Content');
-  
+
   // Generera Excel-fil
   const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
   return { blob: new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), extension: 'xlsx' };
@@ -220,7 +226,7 @@ export async function exportAsExcel(pdfDoc, textBoxes, whiteoutBoxes, patchBoxes
  */
 export async function exportAsWord(pdfDoc, textBoxes, whiteoutBoxes, patchBoxes) {
   const children = [];
-  
+
   // Lägg till titel
   children.push(
     new Paragraph({
@@ -229,14 +235,14 @@ export async function exportAsWord(pdfDoc, textBoxes, whiteoutBoxes, patchBoxes)
       alignment: AlignmentType.CENTER
     })
   );
-  
+
   children.push(
     new Paragraph({
       text: `Antal sidor: ${pdfDoc.numPages}`,
       spacing: { after: 200 }
     })
   );
-  
+
   // Lägg till textinnehåll
   if (textBoxes.length > 0) {
     children.push(
@@ -246,7 +252,7 @@ export async function exportAsWord(pdfDoc, textBoxes, whiteoutBoxes, patchBoxes)
         spacing: { before: 400, after: 200 }
       })
     );
-    
+
     textBoxes.forEach((textBox, index) => {
       if (textBox.text) {
         children.push(
@@ -266,14 +272,14 @@ export async function exportAsWord(pdfDoc, textBoxes, whiteoutBoxes, patchBoxes)
       }
     });
   }
-  
+
   // Skapa dokument
   const doc = new Document({
     sections: [{
       children: children
     }]
   });
-  
+
   const blob = await Packer.toBlob(doc);
   return { blob, extension: 'docx' };
 }
@@ -283,7 +289,7 @@ export async function exportAsWord(pdfDoc, textBoxes, whiteoutBoxes, patchBoxes)
  */
 export async function exportAsPPTX(pdfDoc, textBoxes, whiteoutBoxes, patchBoxes) {
   const pptx = new PptxGenJS();
-  
+
   // Exportera varje sida som en bild i presentationen
   for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
     const page = await pdfDoc.getPage(pageNum);
@@ -292,7 +298,7 @@ export async function exportAsPPTX(pdfDoc, textBoxes, whiteoutBoxes, patchBoxes)
     canvas.width = viewport.width;
     canvas.height = viewport.height;
     const context = canvas.getContext('2d');
-    
+
     // Rendera PDF-sidan
     await page.render({
       canvasContext: context,
@@ -300,7 +306,7 @@ export async function exportAsPPTX(pdfDoc, textBoxes, whiteoutBoxes, patchBoxes)
     }).promise;
 
     // Rita whiteout-boxes
-    const pageWhiteoutBoxes = whiteoutBoxes.filter(wb => 
+    const pageWhiteoutBoxes = whiteoutBoxes.filter(wb =>
       wb.pageIndex === undefined || wb.pageIndex === pageNum - 1
     );
     for (const whiteout of pageWhiteoutBoxes) {
@@ -316,7 +322,7 @@ export async function exportAsPPTX(pdfDoc, textBoxes, whiteoutBoxes, patchBoxes)
     }
 
     // Rita patch-boxes
-    const pagePatchBoxes = patchBoxes.filter(pb => 
+    const pagePatchBoxes = patchBoxes.filter(pb =>
       pb.pageIndex === undefined || pb.pageIndex === pageNum - 1
     );
     for (const patch of pagePatchBoxes) {
@@ -328,7 +334,7 @@ export async function exportAsPPTX(pdfDoc, textBoxes, whiteoutBoxes, patchBoxes)
             img.onerror = reject;
             img.src = patch.imageData;
           });
-          
+
           const scale = 1.5;
           const rect = {
             x: patch.targetRect.x * scale,
@@ -336,7 +342,7 @@ export async function exportAsPPTX(pdfDoc, textBoxes, whiteoutBoxes, patchBoxes)
             width: patch.targetRect.width * scale,
             height: patch.targetRect.height * scale
           };
-          
+
           context.drawImage(img, rect.x, rect.y, rect.width, rect.height);
         } catch (error) {
           console.error('Fel vid rendering av patch:', error);
@@ -345,7 +351,7 @@ export async function exportAsPPTX(pdfDoc, textBoxes, whiteoutBoxes, patchBoxes)
     }
 
     // Rita text-boxes
-    const pageTextBoxes = textBoxes.filter(tb => 
+    const pageTextBoxes = textBoxes.filter(tb =>
       tb.pageIndex === undefined || tb.pageIndex === pageNum - 1
     );
     for (const textBox of pageTextBoxes) {
@@ -354,7 +360,7 @@ export async function exportAsPPTX(pdfDoc, textBoxes, whiteoutBoxes, patchBoxes)
         const fontSize = (textBox.fontSizePt || 12) * scale;
         const x = textBox.rect.x * scale;
         const y = textBox.rect.y * scale + fontSize * 0.8;
-        
+
         context.font = `${textBox.fontStyle || 'normal'} ${textBox.fontWeight || 'normal'} ${fontSize}px ${textBox.fontFamily || 'Helvetica'}`;
         context.fillStyle = textBox.color || '#000000';
         context.fillText(textBox.text, x, y);
@@ -363,7 +369,7 @@ export async function exportAsPPTX(pdfDoc, textBoxes, whiteoutBoxes, patchBoxes)
 
     // Konvertera canvas till bild
     const dataUrl = canvas.toDataURL('image/png');
-    
+
     // Lägg till slide med bilden
     const slide = pptx.addSlide();
     slide.addImage({
@@ -382,7 +388,7 @@ export async function exportAsPPTX(pdfDoc, textBoxes, whiteoutBoxes, patchBoxes)
       color: '363636'
     });
   }
-  
+
   // Generera presentation
   // pptxgenjs v4 använder write() som returnerar en Promise
   const blob = await pptx.write({ outputType: 'blob' });

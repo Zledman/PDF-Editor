@@ -1,0 +1,8 @@
+HTTP/1.1 200 
+Vary: Origin
+Vary: Access-Control-Request-Method
+Vary: Access-Control-Request-Headers
+Content-Type: application/pdf
+Content-Length: 2839
+Date: Sat, 03 Jan 2026 14:19:30 GMT
+

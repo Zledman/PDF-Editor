@@ -2,16 +2,17 @@ import { useState, useRef, useEffect } from 'react';
 import { LINE_HEIGHT_FACTOR, MIN_FONT_PT } from '../utils/textLayoutConstants';
 import { ptToPx, pxToPt, rectPtToPx, rectPxToPt } from '../utils/coordMap';
 
-export default function TransparentTextBox({ 
-  textBox, 
-  zoom, 
-  onUpdate, 
+export default function TransparentTextBox({
+  textBox,
+  zoom,
+  onUpdate,
   onDelete,
   isSelected,
   autoEdit = false, // Ny prop för att automatiskt starta redigering
   textBoxIndex = null, // Index för att kunna hitta textarea
   onResizeStart = null, // Callback för resize-start
   onRotationStart = null, // Callback för rotation-start
+  onDragStart = null, // Callback för drag-start (flytta textbox)
   tool = null, // Aktuellt verktyg för cursor-styling
   hovered = false, // Visuell hover-ram i edit-text-läge
   onHoverChange = null, // Callback för hover enter/leave
@@ -50,11 +51,11 @@ export default function TransparentTextBox({
   // men behåll minst originalstorleken så masken täcker originaltexten.
   const containerRectPx = textBox.isImported
     ? {
-        x: rectPx.x,
-        y: rectPx.y,
-        width: Math.max(rectPx.width, maskSizePx.width),
-        height: Math.max(rectPx.height, maskSizePx.height)
-      }
+      x: rectPx.x,
+      y: rectPx.y,
+      width: Math.max(rectPx.width, maskSizePx.width),
+      height: Math.max(rectPx.height, maskSizePx.height)
+    }
     : rectPx;
   const fontSizePx = ptToPx(textBox.fontSizePt || 12, zoom);
   // Använd en mer kompakt line-height för mindre utrymme under texten
@@ -63,7 +64,7 @@ export default function TransparentTextBox({
   // Dölj importerad, icke-ändrad text tills den redigeras eller ändras
   const isImportedGhost = textBox.isImported && !textBox.isDirty && !isEditing;
   const displayColor = isImportedGhost ? 'transparent' : (textBox.color || '#000000');
-  const showMask = textBox.isImported && textBox.isDirty;
+  const showMask = textBox.isImported && (textBox.isDirty || isEditing);
   // Opak fallback så originaltext inte syns igenom innan sampling
   const maskColor = textBox.maskColor || 'rgba(255,255,255,1)';
   const maskPadTop = 0.1;
@@ -75,9 +76,26 @@ export default function TransparentTextBox({
     ? (hasVisibleText ? 140 : 60)
     : 10;
 
+  // Track if we just stopped editing (to avoid race condition with parent sync)
+  const justStoppedEditingRef = useRef(false);
+
   useEffect(() => {
-    setLocalText(normalizeNewlines(textBox.text || ''));
-  }, [textBox.text]);
+    // Only sync from parent when NOT editing AND not immediately after stopping editing.
+    // This prevents race condition where isEditing becomes false before onUpdate's 
+    // setState has processed, which would reset localText to old value.
+    if (!isEditing && !justStoppedEditingRef.current) {
+      setLocalText(normalizeNewlines(textBox.text || ''));
+    }
+    // Reset the flag AFTER a delay to allow parent state to fully propagate
+    // This prevents the race condition where textBox.text prop updates
+    // trigger another effect run after the flag was reset
+    if (justStoppedEditingRef.current) {
+      const timer = setTimeout(() => {
+        justStoppedEditingRef.current = false;
+      }, 100); // 100ms delay to let parent state settle
+      return () => clearTimeout(timer);
+    }
+  }, [textBox.text, isEditing]);
 
   // Om autoEdit är true, starta redigering automatiskt när komponenten monteras
   useEffect(() => {
@@ -145,7 +163,7 @@ export default function TransparentTextBox({
       textRef.current.style.height = 'auto';
       textRef.current.style.width = 'auto';
       textRef.current.style.lineHeight = `${fontSizePx}px`; // Sätt line-height till exakt fontstorlek för tajt passning
-      
+
       // Vänta lite för att browser ska beräkna scrollHeight korrekt
       requestAnimationFrame(() => {
         requestAnimationFrame(() => { // Dubbel rAF för säker mätning
@@ -165,37 +183,37 @@ export default function TransparentTextBox({
             tempSpan.style.border = 'none';
             tempSpan.textContent = textForMeasure(nextText);
             document.body.appendChild(tempSpan);
-            
+
             const textRect = tempSpan.getBoundingClientRect();
             const exactWidth = textRect.width;
             const exactHeight = textRect.height;
-            
+
             document.body.removeChild(tempSpan);
-            
+
             // Lägg till lite extra utrymme för descenders (g, j, p, q, y) - ca 20% av fontstorleken
             // Men max 3px för att hålla det minimalt
             const descenderPadding = Math.min(3, fontSizePx * 0.2);
             const minHeightByLines = Math.max(1, lineCountOf(nextText)) * fontSizePx;
             const newHeightPx = Math.max(minHeightByLines, exactHeight + descenderPadding);
-            
+
             // Minimal fast padding (1px) för att den sista bokstaven inte ska klippas bort
             const newWidthPx = Math.max(fontSizePx * 0.6, exactWidth + 1);
-            
+
             // Uppdatera textarea först för att säkerställa korrekt mätning
             textRef.current.style.width = `${newWidthPx}px`;
             textRef.current.style.height = `${newHeightPx}px`;
             // Förhindra att textarea "scrollar" internt när man gör en ny tom rad
             textRef.current.scrollTop = 0;
-            
+
             // Uppdatera container till exakt samma mått - ingen extra padding eller margin
             containerRef.current.style.width = `${newWidthPx}px`;
             containerRef.current.style.height = `${newHeightPx}px`;
-            
+
             // Uppdatera textrutan med ny höjd och bredd (för persistent lagring)
             if (onUpdate) {
               const newWidthPt = pxToPt(newWidthPx, zoom);
               const newHeightPt = pxToPt(newHeightPx, zoom);
-              
+
               onUpdate({
                 ...textBox,
                 text: nextText,
@@ -211,7 +229,7 @@ export default function TransparentTextBox({
       });
     }
   };
-  
+
   // Uppdatera container-höjd och bredd när textarea expanderar eller när edit-läge ändras
   useEffect(() => {
     if (isEditing && textRef.current && containerRef.current) {
@@ -219,7 +237,7 @@ export default function TransparentTextBox({
       textRef.current.style.height = 'auto';
       textRef.current.style.width = 'auto';
       textRef.current.style.lineHeight = `${fontSizePx}px`; // Sätt line-height till exakt fontstorlek
-      
+
       // Vänta lite för att browser ska beräkna scrollHeight korrekt
       requestAnimationFrame(() => {
         requestAnimationFrame(() => { // Dubbel rAF för säker mätning
@@ -239,27 +257,27 @@ export default function TransparentTextBox({
             tempSpan.style.border = 'none';
             tempSpan.textContent = textForMeasure(localText);
             document.body.appendChild(tempSpan);
-            
+
             const textRect = tempSpan.getBoundingClientRect();
             const exactWidth = textRect.width;
             const exactHeight = textRect.height;
-            
+
             document.body.removeChild(tempSpan);
-            
+
             // Lägg till lite extra utrymme för descenders (g, j, p, q, y) - ca 20% av fontstorleken
             // Men max 3px för att hålla det minimalt
             const descenderPadding = Math.min(3, fontSizePx * 0.2);
             const minHeightByLines = Math.max(1, lineCountOf(localText)) * fontSizePx;
             const newHeightPx = Math.max(minHeightByLines, exactHeight + descenderPadding);
-            
+
             // Minimal fast padding (1px) för att den sista bokstaven inte ska klippas bort
             const newWidthPx = Math.max(fontSizePx * 0.6, exactWidth + 1);
-            
+
             // Uppdatera textarea först för att säkerställa korrekt mätning
             textRef.current.style.width = `${newWidthPx}px`;
             textRef.current.style.height = `${newHeightPx}px`;
             textRef.current.scrollTop = 0;
-            
+
             // Uppdatera container till exakt samma mått - ingen extra padding eller margin
             containerRef.current.style.width = `${newWidthPx}px`;
             containerRef.current.style.height = `${newHeightPx}px`;
@@ -291,26 +309,26 @@ export default function TransparentTextBox({
             tempSpan.style.border = 'none';
             tempSpan.textContent = localText || ' ';
             document.body.appendChild(tempSpan);
-            
+
             const textRect = tempSpan.getBoundingClientRect();
             const exactWidth = textRect.width;
             const exactHeight = textRect.height;
-            
+
             document.body.removeChild(tempSpan);
-            
+
             // Lägg till lite extra utrymme för descenders (g, j, p, q, y) - ca 20% av fontstorleken
             // Men max 3px för att hålla det minimalt
             const descenderPadding = Math.min(3, fontSizePx * 0.2);
-            
+
             // Beräkna faktisk storlek med minimal fast padding (1px) - samma som i edit-läge
             const actualWidthPx = Math.max(fontSizePx * 0.6, exactWidth + 1);
             // Använd exakt höjd från mätning + padding för descenders, minst en rad höjd
             const actualHeightPx = Math.max(fontSizePx, exactHeight + descenderPadding);
-            
+
             // Uppdatera container-storlek till exakt samma mått som texten - ingen extra padding eller margin
             containerRef.current.style.width = `${actualWidthPx}px`;
             containerRef.current.style.height = `${actualHeightPx}px`;
-            
+
             // Uppdatera även div:ens höjd för att säkerställa att descenders inte klipps
             if (textRef.current) {
               textRef.current.style.height = `${actualHeightPx}px`;
@@ -324,6 +342,8 @@ export default function TransparentTextBox({
   }, [localText, isEditing, fontSizePx, rectPx.height, rectPx.width, textBox.fontFamily, textBox.fontWeight, textBox.fontStyle]);
 
   const handleBlur = () => {
+    // Set flag BEFORE changing isEditing to prevent race condition in sync useEffect
+    justStoppedEditingRef.current = true;
     setIsEditing(false);
     const nextText = normalizeNewlines(localText);
     if (onUpdate) {
@@ -357,6 +377,10 @@ export default function TransparentTextBox({
     } else if (isEditing) {
       // Om vi är i edit-läge, stoppa propagation för att inte avmarkera
       e.stopPropagation();
+    } else if (isSelected && onDragStart) {
+      // Om textrutan är markerad och inte i edit-läge, starta drag för att flytta
+      e.stopPropagation();
+      onDragStart(e);
     }
   };
 
@@ -381,13 +405,13 @@ export default function TransparentTextBox({
   const handleOffset = handleSize; // Flytta handles längre ut
   const handles = isSelected && !isEditing ? [
     { position: 'nw', style: { top: -handleOffset, left: -handleOffset, cursor: 'nw-resize' } },
-    { position: 'n', style: { top: -handleOffset, left: '50%', marginLeft: -handleSize/2, cursor: 'n-resize' } },
+    { position: 'n', style: { top: -handleOffset, left: '50%', marginLeft: -handleSize / 2, cursor: 'n-resize' } },
     { position: 'ne', style: { top: -handleOffset, right: -handleOffset, cursor: 'ne-resize' } },
-    { position: 'e', style: { top: '50%', right: -handleOffset, marginTop: -handleSize/2, cursor: 'e-resize' } },
+    { position: 'e', style: { top: '50%', right: -handleOffset, marginTop: -handleSize / 2, cursor: 'e-resize' } },
     { position: 'se', style: { bottom: -handleOffset, right: -handleOffset, cursor: 'se-resize' } },
-    { position: 's', style: { bottom: -handleOffset, left: '50%', marginLeft: -handleSize/2, cursor: 's-resize' } },
+    { position: 's', style: { bottom: -handleOffset, left: '50%', marginLeft: -handleSize / 2, cursor: 's-resize' } },
     { position: 'sw', style: { bottom: -handleOffset, left: -handleOffset, cursor: 'sw-resize' } },
-    { position: 'w', style: { top: '50%', left: -handleOffset, marginTop: -handleSize/2, cursor: 'w-resize' } }
+    { position: 'w', style: { top: '50%', left: -handleOffset, marginTop: -handleSize / 2, cursor: 'w-resize' } }
   ] : [];
 
   return (
@@ -409,9 +433,9 @@ export default function TransparentTextBox({
         boxShadow: hovered && !isSelected ? '0 0 0 2px rgba(0, 102, 255, 0.15)' : 'none',
         outlineOffset: '0px', // Ingen offset för att outline ska ligga exakt på kanten
         backgroundColor: 'transparent',
-        cursor: isEditing ? 'text' : (tool === 'edit-text' ? 'text' : (tool === null ? 'pointer' : (isSelected && !isEditing ? 'move' : 'default'))),
-        // När highlight-verktyget är aktivt ska text-boxar inte fånga hover/klick.
-        pointerEvents: tool === 'highlight' ? 'none' : 'auto',
+        cursor: isEditing ? 'text' : (tool === 'edit-text' ? 'text' : (tool === 'text' ? 'text' : (tool === null ? 'pointer' : (isSelected && !isEditing ? 'move' : 'default')))),
+        // När highlight-verktyget eller add-text verktyget är aktivt ska text-boxar inte fånga klick.
+        pointerEvents: (tool === 'highlight' || tool === 'text') ? 'none' : 'auto',
         boxSizing: 'content-box', // Använd content-box så att outline inte påverkar mått
         display: 'inline-block', // Låt containern expandera med innehållet
         overflow: 'visible', // Tillåt att descenders syns utanför containern om nödvändigt
@@ -524,7 +548,7 @@ export default function TransparentTextBox({
           }}
         />
       )}
-      
+
       {/* Resize handles */}
       {isSelected && !isEditing && handles.map((handle) => (
         <div
@@ -548,7 +572,7 @@ export default function TransparentTextBox({
           }}
         />
       ))}
-      
+
       {/* Linje mellan s-handle och rotation-handle */}
       {isSelected && !isEditing && (
         <div
@@ -566,7 +590,7 @@ export default function TransparentTextBox({
           }}
         />
       )}
-      
+
       {/* Rotation handle - längre ner, centrerad */}
       {isSelected && !isEditing && (
         <div

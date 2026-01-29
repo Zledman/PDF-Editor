@@ -1,0 +1,107 @@
+.ocrBanner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: linear-gradient(135deg, #FEF3CD 0%, #FCE8A6 100%);
+    border: 1px solid #F5C518;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin: 12px 16px;
+    box-shadow: 0 2px 8px rgba(245, 197, 24, 0.2);
+    animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.ocrBannerContent {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+}
+
+.ocrBannerIcon {
+    font-size: 20px;
+    flex-shrink: 0;
+}
+
+.ocrBannerText {
+    color: #856404;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.4;
+}
+
+.ocrBannerButton {
+    background: #28a745;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.2s ease, transform 0.1s ease;
+}
+
+.ocrBannerButton:hover {
+    background: #218838;
+    transform: translateY(-1px);
+}
+
+.ocrBannerButton:active {
+    transform: translateY(0);
+}
+
+.ocrBannerClose {
+    background: transparent;
+    border: none;
+    color: #856404;
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 0 0 12px;
+    opacity: 0.7;
+    transition: opacity 0.2s ease;
+}
+
+.ocrBannerClose:hover {
+    opacity: 1;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+    .ocrBanner {
+        flex-direction: column;
+        gap: 12px;
+        align-items: stretch;
+    }
+
+    .ocrBannerContent {
+        flex-direction: column;
+        text-align: center;
+    }
+
+    .ocrBannerClose {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        padding: 0;
+    }
+
+    .ocrBanner {
+        position: relative;
+        padding-top: 24px;
+    }
+}

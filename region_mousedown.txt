@@ -1,0 +1,615 @@
+  const handleMouseDown = (e) => {
+    // Sätt isMouseDown till true för att spåra om musknappen är nedtryckt
+    setIsMouseDown(true);
+
+    // Om pan-verktyget är aktivt, starta panning
+    if (tool === 'pan' && containerRef.current) {
+      e.preventDefault();
+      setIsPanning(true);
+      setPanStart({
+        x: e.clientX,
+        y: e.clientY,
+        scrollLeft: containerRef.current.scrollLeft,
+        scrollTop: containerRef.current.scrollTop
+      });
+      return;
+    }
+
+    // Hitta vilken sida som klickades på
+    const clickedPage = findPageFromMousePosition(e);
+    if (!clickedPage || !canvasRefs.current[clickedPage.pageNum]) {
+      // Klick utanför sidorna: avmarkera kommentar och stäng comment-läget
+      if (selectedType === 'comment') {
+        setSelectedElement(null);
+        setSelectedType(null);
+        setTool(null);
+      }
+      return;
+    }
+
+    const canvasRef = canvasRefs.current[clickedPage.pageNum];
+
+    // Beräkna koordinater relativt till canvas för den klickade sidan
+    const canvasRect = canvasRef.getBoundingClientRect();
+
+    // Koordinater relativt till canvas
+    const x = e.clientX - canvasRect.left;
+    const y = e.clientY - canvasRect.top;
+
+    // Uppdatera currentPage om vi klickade på en annan sida
+    if (clickedPage.pageNum !== currentPage) {
+      setCurrentPage(clickedPage.pageNum);
+    }
+
+    // Highlight frihand: starta direkt och hoppa över selektion
+    if (tool === 'highlight' && highlightMode === 'freehand') {
+      setIsDrawing(true);
+      setDrawingPage(clickedPage.pageNum);
+      const startPoint = { x, y };
+      const stroke = {
+        pageIndex: clickedPage.pageNum - 1,
+        color: highlightSettings.color,
+        opacity: highlightSettings.opacity,
+        strokeWidth: highlightSettings.strokeWidth,
+        points: [startPoint]
+      };
+      setCurrentStroke(stroke);
+      return;
+    }
+
+    // Eraser: starta radering (frihand)
+    if (tool === 'eraser') {
+      setIsErasing(true);
+      setDrawingPage(clickedPage.pageNum);
+      setHasErasedThisDrag(false);
+      return;
+    }
+
+    // Kontrollera om vi klickade på ett befintligt element
+    let clickedElement = null;
+    let clickedType = null;
+
+    // Kontrollera textBoxes (endast för aktuell sida)
+    // När add-text (tool === 'text') eller highlight-verktyget är aktivt ska befintlig text inte gå att välja.
+    // Endast edit-text verktyget eller ingen verktyg (selection mode) ska kunna välja befintlig text.
+    const allowTextHitTest = tool === null || tool === 'edit-text';
+    if (allowTextHitTest) {
+      const pageTextBoxes = textBoxes.filter(tb => tb.pageIndex === undefined || tb.pageIndex === currentPage - 1);
+      for (let i = pageTextBoxes.length - 1; i >= 0; i--) {
+        const tb = pageTextBoxes[i];
+        const globalIndex = textBoxes.indexOf(tb);
+        const tbRect = rectPtToPx(tb.rect, zoom);
+        if (x >= tbRect.x && x <= tbRect.x + tbRect.width &&
+          y >= tbRect.y && y <= tbRect.y + tbRect.height) {
+          clickedElement = globalIndex;
+          clickedType = 'text';
+          break;
+        }
+      }
+    }
+
+    if (clickedElement === null) {
+      // Kontrollera whiteoutBoxes (endast för aktuell sida)
+      // Tillåt klick när tool === null (för selektion) eller när tool === 'whiteout' (för redigering)
+      // Hoppa över whiteout-box-kontrollen när text-verktyget är aktivt, så att text kan skapas ovanpå whiteout-boxar
+      // Men hoppa över om det är en resize-handle
+      if ((tool === null || tool === 'whiteout') && tool !== 'text' && !e.target.dataset.resizeHandle) {
+        const pageWhiteoutBoxes = whiteoutBoxes.filter(wb => wb.pageIndex === undefined || wb.pageIndex === currentPage - 1);
+        for (let i = pageWhiteoutBoxes.length - 1; i >= 0; i--) {
+          const wb = pageWhiteoutBoxes[i];
+          const globalIndex = whiteoutBoxes.indexOf(wb);
+          const wbRect = rectPtToPx(wb.rect, zoom);
+          if (x >= wbRect.x && x <= wbRect.x + wbRect.width &&
+            y >= wbRect.y && y <= wbRect.y + wbRect.height) {
+            clickedElement = globalIndex;
+            clickedType = 'whiteout';
+            break;
+          }
+        }
+      }
+    }
+
+    if (clickedElement === null) {
+      // Kontrollera patchBoxes (endast för aktuell sida)
+      // Tillåt klick när tool === null (för selektion) eller när tool === 'patch' (för redigering)
+      // Hoppa över patch-box-kontrollen när text-verktyget är aktivt, så att text kan skapas ovanpå patch-boxar
+      if ((tool === null || tool === 'patch') && tool !== 'text') {
+        const pagePatchBoxes = patchBoxes.filter(pb => pb.pageIndex === undefined || pb.pageIndex === currentPage - 1);
+        for (let i = pagePatchBoxes.length - 1; i >= 0; i--) {
+          const pb = pagePatchBoxes[i];
+          const globalIndex = patchBoxes.indexOf(pb);
+          const pbRect = rectPtToPx(pb.targetRect, zoom);
+          if (x >= pbRect.x && x <= pbRect.x + pbRect.width &&
+            y >= pbRect.y && y <= pbRect.y + pbRect.height) {
+            clickedElement = globalIndex;
+            clickedType = 'patch';
+            break;
+          }
+        }
+      }
+    }
+
+    if (clickedElement === null) {
+      // Kontrollera commentBoxes (endast för aktuell sida)
+      // Tillåt klick när tool === null (för selektion) eller när tool === 'comment' (för redigering)
+      if ((tool === null || tool === 'comment')) {
+        const pageCommentBoxes = commentBoxes.filter(cb => cb.pageIndex === undefined || cb.pageIndex === currentPage - 1);
+        for (let i = pageCommentBoxes.length - 1; i >= 0; i--) {
+          const cb = pageCommentBoxes[i];
+          const globalIndex = commentBoxes.indexOf(cb);
+          const cbRect = rectPtToPx(cb.rect, zoom);
+          // Markören är 24px stor, kontrollera om klick är inom markören
+          if (x >= cbRect.x && x <= cbRect.x + cbRect.width &&
+            y >= cbRect.y && y <= cbRect.y + cbRect.height) {
+            clickedElement = globalIndex;
+            clickedType = 'comment';
+            break;
+          }
+        }
+      }
+    }
+
+    if (clickedElement === null) {
+      // Kontrollera shapeBoxes (endast för aktuell sida)
+      // Tillåt klick när tool === null (för selektion) eller när shape-verktyget är aktivt
+      // Hoppa över shape-box-kontrollen när text-verktyget är aktivt
+      if ((tool === null || (tool && tool.startsWith('shape'))) && tool !== 'text') {
+        const pageShapeBoxes = shapeBoxes.filter(sb => sb.pageIndex === undefined || sb.pageIndex === currentPage - 1);
+        for (let i = pageShapeBoxes.length - 1; i >= 0; i--) {
+          const sb = pageShapeBoxes[i];
+          const globalIndex = shapeBoxes.indexOf(sb);
+          const isLineOrArrow = (sb.type === 'line' || sb.type === 'arrow') && sb.startPoint && sb.endPoint;
+          const isHighlightRect = sb.type === 'highlight';
+
+          let hit = false;
+          if (isLineOrArrow) {
+            // För linjer/pilar: kontrollera om klick är nära linjen (within 5px)
+            const startPx = pointPtToPx(sb.startPoint, zoom);
+            const endPx = pointPtToPx(sb.endPoint, zoom);
+            const distance = pointToLineDistance(x, y, startPx.x, startPx.y, endPx.x, endPx.y);
+            if (distance <= 5) {
+              hit = true;
+            }
+          } else {
+            // För rektanglar/cirklar: ALLTID kontrollera bara om klick är på ramen/bordern
+            // Detta gör att man kan skapa textrutor och andra element inuti formerna
+            const sbRect = rectPtToPx(sb.rect, zoom);
+            if (isHighlightRect) {
+              // Highlight-ytor bör vara klickbara över hela ytan
+              if (x >= sbRect.x && x <= sbRect.x + sbRect.width &&
+                y >= sbRect.y && y <= sbRect.y + sbRect.height) {
+                hit = true;
+              }
+            } else if (sb.type === 'circle') {
+              // För cirklar: kontrollera om klick är nära omkretsen
+              const centerX = sbRect.x + sbRect.width / 2;
+              const centerY = sbRect.y + sbRect.height / 2;
+              const radius = Math.min(sbRect.width, sbRect.height) / 2;
+              hit = isPointNearCircleBorder(x, y, centerX, centerY, radius, 5);
+            } else {
+              // För rektanglar: kontrollera om klick är nära kanten
+              hit = isPointNearRectBorder(x, y, sbRect.x, sbRect.y, sbRect.width, sbRect.height, 5);
+            }
+          }
+
+          if (hit) {
+            clickedElement = globalIndex;
+            clickedType = 'shape';
+            break;
+          }
+        }
+      }
+      if (clickedElement === null) {
+        if ((tool === null)) {
+          const pageLinkBoxes = linkBoxes.filter(lb => lb.pageIndex === undefined || lb.pageIndex === currentPage - 1);
+          for (let i = pageLinkBoxes.length - 1; i >= 0; i--) {
+            const lb = pageLinkBoxes[i];
+            const globalIndex = linkBoxes.indexOf(lb);
+            const lbRect = rectPtToPx(lb.rect, zoom);
+            if (x >= lbRect.x && x <= lbRect.x + lbRect.width &&
+              y >= lbRect.y && y <= lbRect.y + lbRect.height) {
+              clickedElement = globalIndex;
+              clickedType = 'link';
+              break;
+            }
+          }
+        }
+      }
+
+      if (clickedElement !== null) {
+        // Om text är vald, aktivera text-verktyget så att sidebar visas
+        if (clickedType === 'text') {
+          // Spara scroll-position innan vi ändrar tool (för att behålla PDF-canvas position)
+          if (containerRef.current) {
+            scrollPositionRef.current = containerRef.current.scrollTop;
+          }
+          if (tool === null) {
+            setTool('text');
+          } else if (tool !== 'text' && tool !== 'edit-text') {
+            setTool('text');
+          }
+        }
+
+        // Om whiteout är vald, aktivera whiteout-verktyget om tool === null
+        let whiteoutToolJustActivated = false;
+        if (clickedType === 'whiteout') {
+          // Spara scroll-position innan vi ändrar tool (för att behålla PDF-canvas position)
+          if (containerRef.current) {
+            scrollPositionRef.current = containerRef.current.scrollTop;
+          }
+          if (tool === null) {
+            whiteoutToolJustActivated = true;
+            setTool('whiteout');
+          }
+        }
+
+        // Om patch är vald, aktivera patch-verktyget om tool === null
+        let patchToolJustActivated = false;
+        if (clickedType === 'patch') {
+          // Spara scroll-position innan vi ändrar tool (för att behålla PDF-canvas position)
+          if (containerRef.current) {
+            scrollPositionRef.current = containerRef.current.scrollTop;
+          }
+          if (tool === null) {
+            patchToolJustActivated = true;
+            setTool('patch');
+          }
+        }
+
+        // Om shape är vald, aktivera motsvarande shape-verktyg så att sidebar visas
+        let shapeToolJustActivated = false;
+        if (clickedType === 'shape') {
+          const sb = shapeBoxes[clickedElement];
+          const shapeType = sb.type || 'rectangle';
+          const wasShapeToolActive = tool && tool.startsWith('shape');
+          // Spara scroll-position innan vi ändrar tool (för att behålla PDF-canvas position)
+          if (containerRef.current) {
+            scrollPositionRef.current = containerRef.current.scrollTop;
+          }
+          if (shapeType === 'highlight') {
+            setTool('highlight');
+            shapeToolJustActivated = true;
+          } else if (!wasShapeToolActive) {
+            shapeToolJustActivated = true;
+            setTool(`shape-${shapeType}`);
+          }
+        }
+
+        // Om comment är vald, aktivera comment-verktyget om tool === null eller om tool inte är 'comment'
+        // Verktyget förblir aktivt när man klickar på befintliga kommentarer
+        if (clickedType === 'comment' && tool !== 'comment') {
+          // Spara scroll-position innan vi ändrar tool
+          if (containerRef.current) {
+            scrollPositionRef.current = containerRef.current.scrollTop;
+          }
+          setTool('comment');
+        }
+
+        setSelectedElement(clickedElement);
+        setSelectedType(clickedType);
+
+        // Om text är vald och inte i edit-läge, starta drag (men inte om det är en resize-handle)
+        if (clickedType === 'text') {
+          if (tool === 'edit-text') {
+            setTextEditTrigger({ index: clickedElement, nonce: Date.now() });
+          } else if (!e.target.dataset.resizeHandle && !e.target.closest('textarea')) {
+            const tb = textBoxes[clickedElement];
+            const tbRect = rectPtToPx(tb.rect, zoom);
+            setIsDragging(true);
+            setDragStart({ x, y, startX: tbRect.x, startY: tbRect.y });
+            setOriginalRect(tb.rect);
+          }
+        }
+
+        // Om whiteout är vald, starta drag om whiteout-verktyget är aktivt ELLER om vi just aktiverade det
+        // (men inte om det är en resize-handle)
+        if (clickedType === 'whiteout' && (tool === 'whiteout' || whiteoutToolJustActivated) && !e.target.dataset.resizeHandle) {
+          const wb = whiteoutBoxes[clickedElement];
+          const wbRect = rectPtToPx(wb.rect, zoom);
+          setIsDragging(true);
+          setDragStart({ x, y, startX: wbRect.x, startY: wbRect.y });
+          setOriginalRect(wb.rect);
+        }
+
+        // Om patch är vald, starta drag om patch-verktyget är aktivt ELLER om vi just aktiverade det
+        if (clickedType === 'patch' && (tool === 'patch' || patchToolJustActivated)) {
+          const pb = patchBoxes[clickedElement];
+          const pbRect = rectPtToPx(pb.targetRect, zoom);
+          setIsDragging(true);
+          setDragStart({ x, y, startX: pbRect.x, startY: pbRect.y });
+          setOriginalRect(pb.targetRect);
+        }
+
+        // Om shape är vald, starta drag om shape-verktyget är aktivt ELLER om vi just aktiverade det
+        // (men inte om det är en resize-handle eller endpoint-handle)
+        if (clickedType === 'shape' && (tool && tool.startsWith('shape') || shapeToolJustActivated) && !e.target.dataset.resizeHandle && !e.target.dataset.endpointHandle) {
+          const sb = shapeBoxes[clickedElement];
+          const isLineOrArrow = (sb.type === 'line' || sb.type === 'arrow') && sb.startPoint && sb.endPoint;
+          if (isLineOrArrow && sb.startPoint && sb.endPoint) {
+            // För linjer/pilar: starta dragging av hela linjen/pilen
+            setIsDragging(true);
+            setOriginalStartPoint(sb.startPoint);
+            setOriginalEndPoint(sb.endPoint);
+            setDragStart({ x, y });
+          } else if (!isLineOrArrow && sb.rect) {
+            // För rektanglar/cirklar: rektangel-baserad dragging
+            const sbRect = rectPtToPx(sb.rect, zoom);
+            setIsDragging(true);
+            setDragStart({ x, y, startX: sbRect.x, startY: sbRect.y });
+            setOriginalRect(sb.rect);
+          }
+        }
+
+        // Om comment är vald, starta drag (fungerar både med och utan comment-verktyget aktivt)
+        // Men inte om användaren klickade på markören för att öppna redigering
+        if (clickedType === 'comment') {
+          // Kontrollera om klicket var på markören (inte på popup:en)
+          const markerElement = e.target.closest('[data-comment-marker]');
+          const isClickingOnMarker = !!markerElement;
+          const cb = commentBoxes[clickedElement];
+          if (!cb) return;
+
+          // Beräkna koordinater relativt till kommentarens egen sida för konsistens
+          const commentPageNum = (cb.pageIndex !== undefined ? cb.pageIndex : 0) + 1;
+          const commentCanvasRef = canvasRefs.current[commentPageNum];
+          if (!commentCanvasRef) return;
+
+          const commentCanvasRect = commentCanvasRef.getBoundingClientRect();
+          const commentX = e.clientX - commentCanvasRect.left;
+          const commentY = e.clientY - commentCanvasRect.top;
+          const cbRect = rectPtToPx(cb.rect, zoom);
+          // Spara exakt offset inom markören för att undvika att markören hoppar vid dragstart
+          const markerRect = markerElement?.getBoundingClientRect();
+          const offsetX = markerRect ? e.clientX - markerRect.left : commentX - cbRect.x;
+          const offsetY = markerRect ? e.clientY - markerRect.top : commentY - cbRect.y;
+
+          if (isClickingOnMarker) {
+            // Om man klickade på markören, låt CommentBox hantera det (öppna redigering)
+            // Men spara position för att kunna starta drag om användaren drar
+            // Spara drag-start men starta inte drag ännu
+            // Drag startar när användaren faktiskt drar (mousemove)
+            setDragStart({ x: commentX, y: commentY, startX: cbRect.x, startY: cbRect.y, offsetX, offsetY });
+            setOriginalRect(cb.rect);
+            return;
+          }
+
+          // Om klicket inte var på markören, starta drag direkt
+          setIsDragging(true);
+          setDragStart({ x: commentX, y: commentY, startX: cbRect.x, startY: cbRect.y, offsetX, offsetY });
+          setOriginalRect(cb.rect);
+        }
+        return;
+      }
+
+      // Om patch-läge och select-mode, börja markera sourceRect
+      if (tool === 'patch' && patchMode === 'select') {
+        setIsDrawing(true);
+        setDrawStart({ x, y });
+        setCurrentRect({ x, y, width: 0, height: 0 });
+        setDrawingPage(clickedPage.pageNum);
+        setSourcePageIndex(clickedPage.pageNum - 1); // Spara källsidan
+        return;
+      }
+
+      // Om patch-läge och place-mode, placera patch
+      if (tool === 'patch' && patchMode === 'place' && sourceRect) {
+        // sourceRect är i points (pt), konvertera till pixels för att få rätt storlek
+        const sourceRectPx = rectPtToPx(sourceRect, zoom);
+        // Använd samma storlek som sourceRect hade (i pixels)
+        const targetRectPx = {
+          x,
+          y,
+          width: sourceRectPx.width,
+          height: sourceRectPx.height
+        };
+        // Konvertera tillbaka till points för targetRect
+        const targetRectPt = rectPxToPt(targetRectPx, zoom);
+
+        const newPatch = {
+          sourceRect: sourceRect,
+          sourcePageIndex: sourcePageIndex, // Spara källsidan
+          targetRect: targetRectPt,
+          pageIndex: clickedPage.pageNum - 1 // Targetsidan
+        };
+
+        const newPatchBoxes = [...patchBoxes, newPatch];
+        setPatchBoxes(newPatchBoxes);
+        setPatchMode('select');
+        setSourceRect(null);
+        setSourcePageIndex(null);
+        saveToHistory(null, null, newPatchBoxes, null, commentBoxes);
+        return;
+      }
+
+      // För comment-verktyget: skapa kommentar direkt vid klick (om vi inte klickade på en befintlig kommentar)
+      // Kontrollera också att vi inte klickade på en textarea, popup, kommentars-sidomeny eller kommentar-markör
+      const isClickingOnComment = e.target.closest('[data-comment-marker]') ||
+        e.target.closest('textarea') ||
+        e.target.closest('[data-comment-editing]') ||
+        e.target.closest('[data-comment-popup]');
+      const isClickingInCommentSidebar = e.target.closest('[data-comment-sidebar]');
+
+      // Om ett kommentarfält är aktivt (fokus), skapa inte en ny kommentar förrän blur hanterat klart
+      const activeEl = document.activeElement;
+      const isActiveCommentEdit = activeEl && (
+        activeEl.closest('[data-comment-popup]') ||
+        activeEl.closest('textarea')
+      );
+
+      if (tool === 'comment' && clickedElement === null && !isClickingOnComment && !isActiveCommentEdit) {
+        // Om vi nyss jobbade med en kommentar (vald) eller klickar i sidomenyn: skapa inte ny,
+        // avmarkera och stäng verktyget så att nästa klick inte skapar ny kommentar.
+        if (selectedType === 'comment' || isClickingInCommentSidebar) {
+          if (selectedType === 'comment') {
+            setSelectedElement(null);
+            setSelectedType(null);
+          }
+          setTool(null);
+          return;
+        }
+        // Markör-storlek i px (24px för sticky note)
+        const markerSizePx = 24;
+
+        // Skapa kommentar med markör-storlek (använd pxToPt för korrekt konvertering)
+        const rectPx = {
+          x: x - markerSizePx / 2, // Centrera markören på klickpunkten
+          y: y - markerSizePx / 2,
+          width: markerSizePx,
+          height: markerSizePx
+        };
+        const rectPt = rectPxToPt(rectPx, zoom);
+
+        // Generera unikt ID för kommentaren
+        const commentId = `comment-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+        const newCommentBox = {
+          id: commentId,
+          rect: rectPt,
+          text: '',
+          replies: [],
+          pageIndex: currentPage - 1,
+          backgroundColor: commentSettings.backgroundColor, // Spara färg
+          icon: commentSettings.icon // Spara ikon-typ
+        };
+
+        const newCommentBoxes = [...commentBoxes, newCommentBox];
+        setCommentBoxes(newCommentBoxes);
+        const newIndex = commentBoxes.length;
+        setSelectedElement(newIndex);
+        setSelectedType('comment');
+        // Behåll kommentar-verktyget aktivt så användaren kan lägga till fler kommentarer
+        saveToHistory(null, null, null, null, newCommentBoxes);
+
+        // Öppna redigeringsläge automatiskt för nya kommentarer
+        // Detta görs genom att sätta en flagga som CommentBox kan läsa
+        setTimeout(() => {
+          // Trigger en update så att CommentBox öppnar redigeringsläge
+          const updatedBoxes = [...newCommentBoxes];
+          updatedBoxes[newIndex] = { ...updatedBoxes[newIndex], isNew: true };
+          setCommentBoxes(updatedBoxes);
+        }, 50);
+
+        return;
+      }
+
+      // För text-verktyget: skapa textruta direkt vid klick (om vi inte klickade på en befintlig ruta)
+      // Men inte om det redan finns en markerad textruta (för att undvika att skapa ny när man klickar utanför)
+      if (tool === 'text' && clickedElement === null && selectedType !== 'text') {
+        // Spara scroll-position innan vi skapar textrutan för att förhindra att sidan hoppar
+        const savedScrollTop = containerRef.current?.scrollTop || 0;
+
+        // Skapa en textruta med minimal initial storlek (ungefär en bokstav)
+        const fontSizePt = textSettings.fontSizePt || 12;
+        const fontSizePx = fontSizePt * zoom;
+        // Använd en mycket liten initial bredd - textrutan expanderar automatiskt när man skriver
+        const defaultWidthPx = fontSizePx * 0.6; // Ungefär en bokstav
+        const defaultHeightPx = fontSizePx * 1.1; // En rad höjd med kompakt line-height
+        // Justera y-positionen så att textrutan är vertikalt centrerad på klickpunkten
+        // Med halva höjden som offset hamnar mitten av textrutan på klickpunkten
+        const centerOffset = defaultHeightPx / 2; // Offset för att centrera textrutan vertikalt
+        const rectPx = {
+          x: x,
+          y: y - centerOffset, // Flytta upp så att mitten av textrutan hamnar på klickpunkten
+          width: defaultWidthPx,
+          height: defaultHeightPx
+        };
+        const rectPt = rectPxToPt(rectPx, zoom);
+
+        const newTextBox = {
+          rect: rectPt,
+          text: '',
+          fontSizePt: textSettings.fontSizePt,
+          fontFamily: textSettings.fontFamily,
+          color: textSettings.color,
+          fontWeight: textSettings.fontWeight,
+          fontStyle: textSettings.fontStyle,
+          rotation: 0, // Rotation i grader (0-360)
+          pageIndex: currentPage - 1,
+          isNew: true, // Markera som ny för auto-edit
+          isDirty: true
+        };
+        const newTextBoxes = [...textBoxes, newTextBox];
+        setTextBoxes(newTextBoxes);
+        const newIndex = textBoxes.length;
+        setSelectedElement(newIndex);
+        setSelectedType('text');
+        saveToHistory(newTextBoxes, null, null, null, commentBoxes);
+
+        // Återställ scroll-position efter att DOM har uppdaterats
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            if (containerRef.current) {
+              containerRef.current.scrollTop = savedScrollTop;
+            }
+          });
+        });
+
+        // Ta bort isNew-flaggan efter en delay (längre delay för att säkerställa att autoEdit hinner fungera)
+        setTimeout(() => {
+          setTextBoxes(prev => prev.map((tb, i) =>
+            i === newIndex ? { ...tb, isNew: false } : tb
+          ));
+        }, 1000); // Ökad delay för att säkerställa att fokusering hinner fungera
+        return;
+      }
+
+      // Om vi klickade utanför alla element, avmarkera allt
+      // VIKTIGT: Detta måste komma FÖRE ritningslogiken så att valda element avmarkeras först
+      if (clickedElement === null && !e.target.closest('textarea')) {
+        // Om en form är vald när vi klickar utanför, avmarkera den och avaktivera form-verktyget
+        if (selectedType === 'shape' && tool && tool.startsWith('shape')) {
+          setSelectedElement(null);
+          setSelectedType(null);
+          setTool(null); // Avaktivera form-verktyget
+          return; // Avbryt så att form-ritningslogiken inte körs
+        }
+
+        // Om whiteout är vald när vi klickar utanför, avmarkera den och avaktivera whiteout-verktyget
+        if (selectedType === 'whiteout' && tool === 'whiteout') {
+          setSelectedElement(null);
+          setSelectedType(null);
+          setTool(null); // Avaktivera whiteout-verktyget
+          return; // Avbryt så att whiteout-ritningslogiken inte körs
+        }
+
+        // Om text är vald när vi klickar utanför, avmarkera den och avaktivera text-verktyget
+        if (selectedType === 'text' && tool === 'text') {
+          setSelectedElement(null);
+          setSelectedType(null);
+          setTool(null); // Avaktivera text-verktyget
+          return; // Avbryt så att text-ritningslogiken inte körs
+        }
+
+        setSelectedElement(null);
+        setSelectedType(null);
+      }
+
+      // För whiteout, börja rita (endast om verktyget är aktivt och vi inte klickade på en befintlig ruta)
+      // VIKTIGT: Detta måste komma EFTER avmarkeringslogiken så att valda whiteout-element avmarkeras först
+      if (tool === 'whiteout' && clickedElement === null && selectedType !== 'whiteout') {
+        setIsDrawing(true);
+        setDrawStart({ x, y });
+        setCurrentRect({ x, y, width: 0, height: 0 });
+        setDrawingPage(clickedPage.pageNum);
+        return;
+      }
+
+      // Bild-verktyg: dra för att placera vald bild
+      if (tool === 'image' && pendingImageData && clickedElement === null) {
+        setIsDrawing(true);
+        setDrawStart({ x, y });
+        setCurrentRect({ x, y, width: 0, height: 0 });
+        setDrawingPage(clickedPage.pageNum);
+        return;
+      }
+
+      // För highlight-ytor (rektangulär)
+      if (tool === 'highlight' && highlightMode === 'rect' && clickedElement === null && selectedType !== 'shape') {
+        setIsDrawing(true);
+        setDrawStart({ x, y });
+        setCurrentRect({ x, y, width: 0, height: 0 });
+        setDrawingPage(clickedPage.pageNum);
+        return;
+      }
+
+      // Link Tool: skapar en ny länkruta

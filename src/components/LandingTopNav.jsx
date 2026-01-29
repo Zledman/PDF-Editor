@@ -1,10 +1,17 @@
 import { useTranslation } from 'react-i18next';
 import './LandingTopNav.css';
+import { ToolIcon } from './ToolIcons';
+import { useTheme } from '../contexts/ThemeContext';
+import ThemeToggle from './ThemeToggle';
 
-export default function LandingTopNav() {
+import LanguageSelector from './LanguageSelector';
+
+export default function LandingTopNav({ enabledTools = [], onToolSelect = null }) {
   const { t } = useTranslation();
+  const { theme, toggleTheme } = useTheme();
 
   const comingSoon = t('landingPage.comingSoon', 'Kommer snart');
+  const enabledSet = new Set(enabledTools || []);
 
   const toolCategories = [
     {
@@ -77,19 +84,30 @@ export default function LandingTopNav() {
   const navItems = [
     { key: 'converter', label: t('landingPage.nav.pdfConverter'), disabled: true },
     { key: 'editor', label: t('landingPage.nav.pdfEditor'), disabled: false },
-    { key: 'forms', label: t('landingPage.nav.forms'), disabled: true },
-    { key: 'translate', label: t('landingPage.nav.translatePdf'), disabled: true }
+    { key: 'translatePdf', label: t('landingPage.nav.translatePdf'), disabled: false, isBeta: true },
+    { key: 'pricing', label: t('landingPage.nav.pricing'), disabled: false }
   ];
 
   return (
     <header className="landingNav">
       <div className="landingNavInner">
         <div className="landingNavLeft">
-          <div className="landingBrand" aria-label="PDF Editor">
+          <div className="landingBrand" aria-label="PDFMoment">
             <span className="landingBrandMark" aria-hidden="true">
-              P
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M4 8V6a2 2 0 0 1 2-2h2" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M16 4h2a2 2 0 0 1 2 2v2" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M4 16v2a2 2 0 0 0 2 2h2" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M16 20h2a2 2 0 0 0 2-2v-2" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+
+                <circle cx="12" cy="12" r="3" fill="white" />
+                <path d="M12 19c-4 0-7-3-7-7s3-7 7-7 7 3 7 7-3 7-7 7z" stroke="white" strokeWidth="1.5" strokeOpacity="0.5" />
+              </svg>
             </span>
-            <span className="landingBrandText">{t('landingPage.title')}</span>
+            <span className="landingBrandText">
+              <span className="landingBrandPdf">PDF</span>
+              <span className="landingBrandMoment">Moment</span>
+            </span>
           </div>
         </div>
 
@@ -116,19 +134,33 @@ export default function LandingTopNav() {
                     <div className="landingToolsHeading">{cat.title}</div>
                     <div className="landingToolsList">
                       {cat.tools.map((tool) => (
-                        <button
-                          key={tool.key}
-                          type="button"
-                          className="landingToolItem"
-                          title={comingSoon}
-                          aria-disabled="true"
-                          onClick={(e) => {
-                            e.preventDefault();
-                          }}
-                        >
-                          <span className="landingToolIcon" aria-hidden="true" style={{ '--toolColor': tool.color }} />
-                          <span className="landingToolLabel">{tool.label}</span>
-                        </button>
+                        (() => {
+                          const isEnabled = enabledSet.has(tool.key);
+                          const tooltipDesc = t(`landingPage.tools.tooltips.${tool.key}`, '');
+                          const title = isEnabled ? tooltipDesc || tool.label : comingSoon;
+                          const ariaDisabled = isEnabled ? 'false' : 'true';
+                          const className = `landingToolItem ${isEnabled ? 'isEnabled' : 'isDisabled'}`;
+                          return (
+                            <button
+                              key={tool.key}
+                              type="button"
+                              className={className}
+                              title={title}
+                              aria-disabled={ariaDisabled}
+                              onClick={(e) => {
+                                if (!isEnabled) {
+                                  e.preventDefault();
+                                  return;
+                                }
+                                e.preventDefault();
+                                onToolSelect?.(tool.key);
+                              }}
+                            >
+                              <ToolIcon toolKey={tool.key} color={tool.color} />
+                              <span className="landingToolLabel">{tool.label}</span>
+                            </button>
+                          );
+                        })()
                       ))}
                     </div>
                   </div>
@@ -153,16 +185,25 @@ export default function LandingTopNav() {
                     return;
                   }
                   // PDF Editor är redan den här sidan; no-op men behåll “active”-känsla.
+                  if (item.key === 'translatePdf' || item.key === 'pricing') {
+                    e.preventDefault();
+                    onToolSelect?.(item.key);
+                    return;
+                  }
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
               >
                 {item.label}
+                {item.isBeta && <span className="landingNavBeta">Beta</span>}
               </button>
             );
           })}
         </nav>
 
         <div className="landingNavRight">
+          <LanguageSelector />
+          <ThemeToggle />
+
           <button
             type="button"
             className="landingLoginBtn"

@@ -137,8 +137,8 @@ export default function ThumbnailSidebar({ pdfDoc, currentPage, onPageSelect, zo
         left: 0,
         bottom: 0,
         width: `${sidebarWidth}px`,
-        backgroundColor: '#2a2a2a',
-        borderRight: '1px solid #444',
+        backgroundColor: 'var(--bg-secondary)',
+        borderRight: '1px solid var(--border-color)',
         overflowY: 'auto',
         overflowX: 'hidden',
         display: 'flex',
@@ -197,8 +197,8 @@ export default function ThumbnailSidebar({ pdfDoc, currentPage, onPageSelect, zo
               borderRadius: '4px',
               overflow: 'hidden',
               backgroundColor: '#fff',
-              boxShadow: isActive 
-                ? '0 4px 12px rgba(255, 107, 53, 0.4)' 
+              boxShadow: isActive
+                ? '0 4px 12px rgba(255, 107, 53, 0.4)'
                 : '0 2px 4px rgba(0,0,0,0.2)',
               transition: 'all 0.2s ease',
               position: 'relative'

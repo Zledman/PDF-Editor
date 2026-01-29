@@ -1,18 +1,18 @@
 import { useTranslation } from 'react-i18next';
 
-export default function FloatingControlBar({ 
-  currentPage, 
-  totalPages, 
-  onPageChange, 
-  zoom, 
-  onZoomIn, 
-  onZoomOut, 
-  panToolActive, 
+export default function FloatingControlBar({
+  currentPage,
+  totalPages,
+  onPageChange,
+  zoom,
+  onZoomIn,
+  onZoomOut,
+  panToolActive,
   onPanToolToggle,
   sidebarWidth = 0
 }) {
   const { t } = useTranslation();
-  
+
   const handlePreviousPage = () => {
     if (currentPage > 1) {
       onPageChange(currentPage - 1);
@@ -45,8 +45,8 @@ export default function FloatingControlBar({
       }}
     >
       {/* Page Navigation */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <span style={{ color: '#d0d0d0', fontSize: '14px', fontWeight: '500' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <span style={{ color: '#d0d0d0', fontSize: '16px', fontWeight: '500' }}>
           {t('floatingControlBar.page')}:
         </span>
         <button
@@ -57,8 +57,8 @@ export default function FloatingControlBar({
             border: 'none',
             color: currentPage === 1 ? '#666' : '#d0d0d0',
             cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
-            fontSize: '16px',
-            padding: '4px 8px',
+            fontSize: '20px',
+            padding: '6px 10px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -78,7 +78,7 @@ export default function FloatingControlBar({
         >
           ^
         </button>
-        <span style={{ color: '#d0d0d0', fontSize: '14px', minWidth: '40px', textAlign: 'center' }}>
+        <span style={{ color: '#d0d0d0', fontSize: '16px', minWidth: '50px', textAlign: 'center' }}>
           {currentPage}/{totalPages}
         </span>
         <button
@@ -89,8 +89,8 @@ export default function FloatingControlBar({
             border: 'none',
             color: currentPage === totalPages ? '#666' : '#d0d0d0',
             cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
-            fontSize: '16px',
-            padding: '4px 8px',
+            fontSize: '20px',
+            padding: '6px 10px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -138,7 +138,7 @@ export default function FloatingControlBar({
         }}
         title={t('floatingControlBar.zoomIn')}
       >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="11" cy="11" r="8"></circle>
           <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
           <line x1="11" y1="8" x2="11" y2="14"></line>
@@ -172,7 +172,7 @@ export default function FloatingControlBar({
         }}
         title={t('floatingControlBar.zoomOut')}
       >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="11" cy="11" r="8"></circle>
           <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
           <line x1="8" y1="11" x2="14" y2="11"></line>
@@ -209,26 +209,9 @@ export default function FloatingControlBar({
         }}
         title={t('floatingControlBar.panTool')}
       >
-        {/* Hand icon - öppen hand som matchar grab cursor */}
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-          {/* Öppen hand - minimalistisk outline design med handflata framåt och fem fingrar */}
-          {/* Tumme (vänster sida, vinklad utåt och nedåt) */}
-          <path d="M5.5 16.5c0-1.2 1-2.2 2.2-2.2h1.3c.5 0 .8.2 1.1.5"></path>
-          <path d="M5.5 16.5v2.5"></path>
-          {/* Handflata (bred, kurvar nedåt mot botten) */}
-          <path d="M7 19c0 1.1.9 2 2 2h6c1.1 0 2-.9 2-2v-4.5"></path>
-          {/* Pekfinger (rak, parallell) */}
-          <path d="M8.5 13v-5.5c0-1.1-.9-2-2-2"></path>
-          <path d="M8.5 13v3.5"></path>
-          {/* Långfinger (längst, rak) */}
-          <path d="M12 1V0c0-1.1-.9-2-2-2"></path>
-          <path d="M12 1v8.5"></path>
-          {/* Ringfinger (rak, parallell) */}
-          <path d="M15.5 3.5v-3.5c0-1.1-.9-2-2-2"></path>
-          <path d="M15.5 3.5v3.5"></path>
-          {/* Lillfinger (rak, parallell) */}
-          <path d="M19 5.5v-2.5c0-1.1-.9-2-2-2"></path>
-          <path d="M19 5.5v2.5"></path>
+        {/* Hand icon - user provided design */}
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M21 7C21 5.62 19.88 4.5 18.5 4.5C18.33 4.5 18.16 4.5 18 4.55V4C18 2.62 16.88 1.5 15.5 1.5C15.27 1.5 15.04 1.53 14.83 1.59C14.46 .66 13.56 0 12.5 0C11.27 0 10.25 .89 10.04 2.06C9.87 2 9.69 2 9.5 2C8.12 2 7 3.12 7 4.5V10.39C6.66 10.08 6.24 9.85 5.78 9.73L5 9.5C4.18 9.29 3.31 9.61 2.82 10.35C2.44 10.92 2.42 11.66 2.67 12.3L5.23 18.73C6.5 21.91 9.57 24 13 24C17.42 24 21 20.42 21 16V7M19 16C19 19.31 16.31 22 13 22C10.39 22 8.05 20.41 7.09 18L4.5 11.45L5 11.59C5.5 11.71 5.85 12.05 6 12.5L7 15H9V4.5C9 4.22 9.22 4 9.5 4S10 4.22 10 4.5V12H12V2.5C12 2.22 12.22 2 12.5 2S13 2.22 13 2.5V12H15V4C15 3.72 15.22 3.5 15.5 3.5S16 3.72 16 4V12H18V7C18 6.72 18.22 6.5 18.5 6.5S19 6.72 19 7V16Z" />
         </svg>
       </button>
     </div>
