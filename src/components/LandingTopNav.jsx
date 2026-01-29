@@ -83,7 +83,6 @@ export default function LandingTopNav({ enabledTools = [], onToolSelect = null }
 
   const navItems = [
     { key: 'converter', label: t('landingPage.nav.pdfConverter'), disabled: true },
-    { key: 'editor', label: t('landingPage.nav.pdfEditor'), disabled: false },
     { key: 'translatePdf', label: t('landingPage.nav.translatePdf'), disabled: false, isBeta: true },
     { key: 'pricing', label: t('landingPage.nav.pricing'), disabled: false }
   ];
@@ -170,7 +169,8 @@ export default function LandingTopNav({ enabledTools = [], onToolSelect = null }
           </div>
 
           {navItems.map((item) => {
-            const className = `landingNavItem ${item.disabled ? 'isDisabled' : 'isActive'}`;
+            const isCurrent = item.key === 'editor';
+            const className = `landingNavItem ${item.disabled ? 'isDisabled' : (isCurrent ? 'isActive' : '')}`;
             const title = item.disabled ? comingSoon : undefined;
             return (
               <button

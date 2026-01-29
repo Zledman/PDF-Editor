@@ -205,6 +205,31 @@ export default function EditorToolbar({
                 </div>
             </div>
 
+            {/* Undo/Redo */}
+            <div className="editorToolbar__group">
+                <ToolbarButton
+                    icon={UndoIcon}
+                    label={t('toolbar.undo')}
+                    tooltip={t('tooltips.undo', 'Ångra senaste åtgärden (Ctrl+Z)')}
+                    disabled={historyIndex <= 0}
+                    onClick={onUndo}
+                />
+                <ToolbarButton
+                    icon={RedoIcon}
+                    label={t('toolbar.redo')}
+                    tooltip={t('tooltips.redo', 'Gör om senaste ångrade åtgärden (Ctrl+Y)')}
+                    disabled={historyIndex >= historyLength - 1}
+                    onClick={onRedo}
+                />
+                <ToolbarButton
+                    icon={PanIcon}
+                    label={t('toolbar.pan')}
+                    tooltip={t('toolbar.tooltips.pan', 'Dra för att flytta PDF:en')}
+                    active={tool === 'pan'}
+                    onClick={() => toggleTool('pan')}
+                />
+            </div>
+
             {/* Text editing tools */}
             <div className="editorToolbar__group">
                 <ToolbarButton
@@ -443,13 +468,6 @@ export default function EditorToolbar({
             {/* Pan & Eraser */}
             <div className="editorToolbar__group">
                 <ToolbarButton
-                    icon={PanIcon}
-                    label={t('toolbar.pan')}
-                    tooltip={t('toolbar.tooltips.pan', 'Dra för att flytta PDF:en')}
-                    active={tool === 'pan'}
-                    onClick={() => toggleTool('pan')}
-                />
-                <ToolbarButton
                     icon={EraserIcon}
                     label={t('toolbar.eraser', 'Eraser')}
                     tooltip={t('toolbar.tooltips.eraser', 'Radera element genom att klicka på dem')}
@@ -551,24 +569,6 @@ export default function EditorToolbar({
                 </div>
             )}
 
-            {/* Undo/Redo */}
-            <div className="editorToolbar__group">
-                <ToolbarButton
-                    icon={UndoIcon}
-                    label={t('toolbar.undo')}
-                    tooltip={t('tooltips.undo', 'Ångra senaste åtgärden (Ctrl+Z)')}
-                    disabled={historyIndex <= 0}
-                    onClick={onUndo}
-                />
-                <ToolbarButton
-                    icon={RedoIcon}
-                    label={t('toolbar.redo')}
-                    tooltip={t('tooltips.redo', 'Gör om senaste ångrade åtgärden (Ctrl+Y)')}
-                    disabled={historyIndex >= historyLength - 1}
-                    onClick={onRedo}
-                />
-            </div>
-
             {/* Right-aligned tools */}
             <div className="editorToolbar__group editorToolbar__group--right">
                 <ToolbarButton
@@ -589,7 +589,6 @@ export default function EditorToolbar({
                         onClick={onToggleSettings}
                     />
                 </div>
-
             </div>
         </div>
     );
