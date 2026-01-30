@@ -63,13 +63,23 @@ async function killListenerOnPort(port) {
     '-NoProfile',
     '-Command',
     `$p=${port}; ` +
-      `$conns=Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue; ` +
-      `if(-not $conns){ exit 3 }; ` +
-      `$pids=$conns | Select-Object -ExpandProperty OwningProcess | Sort-Object -Unique; ` +
-      `$pids | ForEach-Object { Write-Output $_ }`,
+    `$conns=Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue; ` +
+    `if(-not $conns){ exit 3 }; ` +
+    `$pids=$conns | Select-Object -ExpandProperty OwningProcess | Sort-Object -Unique; ` +
+    `$pids | ForEach-Object { Write-Output $_ }`,
   ];
 
-  const res = await run('pwsh', psCmd);
+  let res;
+  try {
+    res = await run('pwsh', psCmd);
+  } catch (err) {
+    if (err && err.code === 'ENOENT') {
+      // pwsh not found, try powershell (Windows PowerShell)
+      res = await run('powershell', psCmd);
+    } else {
+      throw err;
+    }
+  }
   if (res.code === 3) return { killed: false, pids: [] };
   if (res.code !== 0) {
     throw new Error(
@@ -141,9 +151,9 @@ try {
     'mvn',
     ['-DskipTests', `-Dspring-boot.run.arguments=--server.port=${PORT}`, 'spring-boot:run'],
     {
-    cwd: 'server-java',
-    stdio: 'inherit',
-    shell: true,
+      cwd: 'server-java',
+      stdio: 'inherit',
+      shell: true,
     }
   );
 
