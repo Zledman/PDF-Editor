@@ -445,7 +445,7 @@ export default function PageManagementPanel({
           overflowY: 'auto',
           padding: '40px',
           display: 'flex',
-          justifyContent: 'flex-start',
+          justifyContent: 'center',
           alignItems: 'flex-start'
         }}>
           <ThumbnailGrid

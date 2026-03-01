@@ -7,6 +7,7 @@ export default function ThumbnailSidebar({ pdfDoc, currentPage, onPageSelect, zo
   const [isResizing, setIsResizing] = useState(false);
   const [resizeStartX, setResizeStartX] = useState(0);
   const [resizeStartWidth, setResizeStartWidth] = useState(0);
+  const [isHandleHovered, setIsHandleHovered] = useState(false);
   const sidebarRef = useRef(null);
   const minWidth = 150;
   const maxWidth = 400;
@@ -48,7 +49,9 @@ export default function ThumbnailSidebar({ pdfDoc, currentPage, onPageSelect, zo
       for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
         thumbnailPromises.push(
           pdfDoc.getPage(pageNum).then(async (page) => {
-            const viewport = page.getViewport({ scale: 0.5 }); // Mindre scale för miniatyrer
+            // Explicitly pass page rotation to ensure correct orientation
+            const rotation = page.rotate || 0;
+            const viewport = page.getViewport({ scale: 0.5, rotation }); // Mindre scale för miniatyrer
             const canvas = document.createElement('canvas');
             const context = canvas.getContext('2d');
             canvas.width = viewport.width;
@@ -63,7 +66,8 @@ export default function ThumbnailSidebar({ pdfDoc, currentPage, onPageSelect, zo
               pageNum,
               dataUrl: canvas.toDataURL('image/png'),
               width: viewport.width,
-              height: viewport.height
+              height: viewport.height,
+              rotation: rotation
             };
           })
         );
@@ -133,119 +137,144 @@ export default function ThumbnailSidebar({ pdfDoc, currentPage, onPageSelect, zo
       ref={sidebarRef}
       style={{
         position: 'absolute',
-        top: 0, // Börja från toppen av parent container (som redan är under toolbar)
+        top: 0,
         left: 0,
         bottom: 0,
         width: `${sidebarWidth}px`,
         backgroundColor: 'var(--bg-secondary)',
-        borderRight: '1px solid var(--border-color)',
-        overflowY: 'auto',
-        overflowX: 'hidden',
         display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        padding: `${thumbnailPadding}px`,
-        paddingTop: `${thumbnailPadding + 10}px`, // Extra padding överst
+        flexDirection: 'row',
         transition: isResizing ? 'none' : 'width 0.2s ease',
         zIndex: 5
       }}
     >
-      {/* Resize handle */}
+      {/* Scrollable thumbnail area */}
+      <div
+        style={{
+          flex: 1,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          padding: `${thumbnailPadding}px`,
+          paddingTop: `${thumbnailPadding + 10}px`,
+          paddingRight: '4px' // Leave space for resize handle
+        }}
+      >
+        {/* Thumbnails */}
+        {thumbnails.map((thumbnail) => {
+          const aspectRatio = thumbnail.height / thumbnail.width;
+          const displayWidth = thumbnailWidth;
+          const displayHeight = displayWidth * aspectRatio;
+          const isActive = thumbnail.pageNum === currentPage;
+
+          return (
+            <div
+              key={thumbnail.pageNum}
+              onClick={() => onPageSelect(thumbnail.pageNum)}
+              style={{
+                width: `${displayWidth}px`,
+                marginBottom: '20px',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                flexShrink: 0
+              }}
+            >
+              {/* Image Container */}
+              <div
+                style={{
+                  width: `${displayWidth}px`,
+                  height: `${displayHeight}px`,
+                  cursor: 'pointer',
+                  // Orange border for active state
+                  border: isActive ? '3px solid #ff6b35' : '1px solid #e0e0e0',
+                  borderRadius: '4px',
+                  overflow: 'hidden',
+                  backgroundColor: '#fff',
+                  boxShadow: isActive ? '0 2px 8px rgba(255, 107, 53, 0.3)' : '0 1px 3px rgba(0,0,0,0.1)',
+                  transition: 'all 0.15s ease'
+                }}
+                onMouseEnter={(e) => {
+                  if (!isActive) {
+                    // Hover color
+                    e.currentTarget.style.borderColor = '#ffb088';
+                    e.currentTarget.style.boxShadow = '0 2px 6px rgba(0,0,0,0.15)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isActive) {
+                    e.currentTarget.style.borderColor = '#e0e0e0';
+                    e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
+                  }
+                }}
+              >
+                <img
+                  src={thumbnail.dataUrl}
+                  alt={`Sida ${thumbnail.pageNum}`}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'contain',
+                    display: 'block'
+                  }}
+                />
+              </div>
+
+              {/* Page number below image */}
+              <div
+                style={{
+                  marginTop: '6px',
+                  color: '#fff',
+                  backgroundColor: isActive ? '#ff6b35' : '#757575',
+                  padding: '2px 8px',
+                  borderRadius: '10px',
+                  fontSize: '12px',
+                  fontWeight: isActive ? '600' : '400',
+                  pointerEvents: 'none',
+                  minWidth: '20px',
+                  textAlign: 'center'
+                }}
+              >
+                {thumbnail.pageNum}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Resize handle - now a sibling, always full height */}
       <div
         data-resize-handle="sidebar"
         onMouseDown={handleMouseDown}
+        onMouseEnter={() => setIsHandleHovered(true)}
+        onMouseLeave={() => setIsHandleHovered(false)}
         style={{
-          position: 'absolute',
-          right: 0,
-          top: 0,
-          bottom: 0,
-          width: '4px',
-          backgroundColor: '#555',
+          width: '16px', // Wider hit area
+          backgroundColor: isHandleHovered || isResizing ? 'rgba(0,0,0,0.05)' : 'transparent',
           cursor: 'col-resize',
-          zIndex: 100,
-          transition: 'background-color 0.2s ease'
+          flexShrink: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderLeft: '1px solid #e0e0e0', // Visual separator
+          transition: 'background-color 0.2s ease',
+          position: 'relative'
         }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.backgroundColor = '#ff6b35';
-        }}
-        onMouseLeave={(e) => {
-          if (!isResizing) {
-            e.currentTarget.style.backgroundColor = '#555';
-          }
-        }}
-      />
-
-      {/* Thumbnails */}
-      {thumbnails.map((thumbnail) => {
-        const aspectRatio = thumbnail.height / thumbnail.width;
-        const displayWidth = thumbnailWidth;
-        const displayHeight = displayWidth * aspectRatio;
-        const isActive = thumbnail.pageNum === currentPage;
-
-        return (
-          <div
-            key={thumbnail.pageNum}
-            onClick={() => onPageSelect(thumbnail.pageNum)}
-            style={{
-              width: `${displayWidth}px`,
-              height: `${displayHeight}px`,
-              marginBottom: '15px',
-              marginLeft: '10px', // Extra utrymme vänster
-              marginRight: '10px', // Extra utrymme höger
-              cursor: 'pointer',
-              border: isActive ? '3px solid #ff6b35' : '2px solid #555',
-              borderRadius: '4px',
-              overflow: 'hidden',
-              backgroundColor: '#fff',
-              boxShadow: isActive
-                ? '0 4px 12px rgba(255, 107, 53, 0.4)'
-                : '0 2px 4px rgba(0,0,0,0.2)',
-              transition: 'all 0.2s ease',
-              position: 'relative'
-            }}
-            onMouseEnter={(e) => {
-              if (!isActive) {
-                e.currentTarget.style.borderColor = '#888';
-                e.currentTarget.style.transform = 'scale(1.05)';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!isActive) {
-                e.currentTarget.style.borderColor = '#555';
-                e.currentTarget.style.transform = 'scale(1)';
-              }
-            }}
-          >
-            <img
-              src={thumbnail.dataUrl}
-              alt={`Sida ${thumbnail.pageNum}`}
-              style={{
-                width: '100%',
-                height: '100%',
-                objectFit: 'contain',
-                display: 'block'
-              }}
-            />
-            {/* Sidnummer */}
-            <div
-              style={{
-                position: 'absolute',
-                bottom: 0,
-                left: 0,
-                right: 0,
-                backgroundColor: isActive ? 'rgba(255, 107, 53, 0.9)' : 'rgba(0, 0, 0, 0.7)',
-                color: '#fff',
-                textAlign: 'center',
-                padding: '4px',
-                fontSize: '12px',
-                fontWeight: 'bold'
-              }}
-            >
-              {thumbnail.pageNum}
-            </div>
-          </div>
-        );
-      })}
+      >
+        {/* The visual Grip / Flärp */}
+        <div
+          style={{
+            width: '4px',
+            height: '32px',
+            borderRadius: '2px',
+            backgroundColor: isHandleHovered || isResizing ? '#ff6b35' : '#bbb', // Neutral grey -> Orange on interaction
+            transition: 'background-color 0.2s ease',
+            boxShadow: isHandleHovered || isResizing ? '0 0 4px rgba(255, 107, 53, 0.4)' : 'none'
+          }}
+        />
+      </div>
     </div>
   );
 }

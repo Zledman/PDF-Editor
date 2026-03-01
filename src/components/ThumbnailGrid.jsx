@@ -61,9 +61,9 @@ export default function ThumbnailGrid({
                     const pdfPage = await sourceDoc.getPage(page.originalIndex + 1);
 
                     // Adjust viewport scale for higher quality zoom if needed, but keep it performant
-                    // Base scale 0.3 is for ~180px width
-                    // If scale is 2, we need ~360px width, so render scale 0.6
-                    const renderScale = 0.3 * Math.max(1, scale);
+                    const pixelRatio = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
+                    const baseScale = 0.4;
+                    const renderScale = baseScale * Math.max(1, scale) * pixelRatio;
 
                     const viewport = pdfPage.getViewport({ scale: renderScale });
                     const canvas = document.createElement('canvas');
@@ -99,15 +99,15 @@ export default function ThumbnailGrid({
 
     // Base width 180px * scale
     const itemWidth = Math.round(180 * scale);
-    const gap = Math.round(30 * scale);
+    const gap = Math.round(60 * scale);
 
     return (
         <div style={{
             display: 'grid',
-            gridTemplateColumns: `repeat(auto-fill, minmax(${itemWidth}px, 1fr))`,
+            gridTemplateColumns: `repeat(auto-fill, ${itemWidth}px)`,
+            justifyContent: 'center',
             gap: `${gap}px`,
             width: '100%',
-            maxWidth: '1200px',
             paddingBottom: '40px'
         }}>
             {pages.map((page, index) => {
@@ -134,8 +134,8 @@ export default function ThumbnailGrid({
                             aspectRatio: '210/297', // A4 aspect ratio approximation
                             backgroundColor: '#fff',
                             borderRadius: '4px',
-                            boxShadow: isSelected ? '0 0 0 4px rgba(118, 118, 241, 0.4)' : '0 2px 5px rgba(0,0,0,0.1)',
-                            border: isSelected ? '2px solid #5d5df2' : '1px solid #e0e0e0',
+                            boxShadow: isSelected ? '0 0 0 4px rgba(255, 107, 53, 0.4)' : '0 2px 5px rgba(0,0,0,0.1)',
+                            border: isSelected ? '2px solid #ff6b35' : '1px solid #e0e0e0',
                             overflow: 'hidden',
                             position: 'relative',
                             transition: 'all 0.2s',
@@ -164,29 +164,13 @@ export default function ThumbnailGrid({
                                 </div>
                             )}
 
-                            {/* Checkbox Overlay */}
-                            <div style={{
-                                position: 'absolute',
-                                top: '10px',
-                                left: '10px',
-                                width: '20px',
-                                height: '20px',
-                                borderRadius: '4px',
-                                border: isSelected ? 'none' : '2px solid rgba(0,0,0,0.2)',
-                                backgroundColor: isSelected ? '#5d5df2' : 'rgba(255,255,255,0.8)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                zIndex: 10
-                            }}>
-                                {isSelected && <span style={{ color: '#fff', fontSize: '14px' }}>✓</span>}
-                            </div>
+
                         </div>
 
                         {/* Page Number Label */}
                         <div style={{
                             marginTop: '10px',
-                            backgroundColor: isSelected ? '#5d5df2' : '#6c757d',
+                            backgroundColor: isSelected ? '#ff6b35' : '#6c757d',
                             color: '#fff',
                             borderRadius: '12px',
                             padding: '2px 10px',

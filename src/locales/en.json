@@ -145,6 +145,16 @@
     "key": "Private/Confidential",
     "preview": "Preview"
   },
+  "imageSidebar": {
+    "rotation": "Rotation",
+    "rotateLeft": "Rotate Left",
+    "rotateRight": "Rotate Right",
+    "opacity": "Opacity",
+    "opacityTooltip": "Adjust image opacity",
+    "confirmDelete": "Do you want to delete the image?",
+    "delete": "Delete image",
+    "deleteButton": "Delete"
+  },
   "colors": {
     "black": "Black",
     "white": "White",

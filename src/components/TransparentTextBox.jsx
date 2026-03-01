@@ -403,15 +403,12 @@ export default function TransparentTextBox({
   const handleSize = 8;
   // Offset för att flytta alla handles utanför textrutan för att undvika att täcka texten
   const handleOffset = handleSize; // Flytta handles längre ut
+  // Only 4 corner handles (nw, ne, se, sw) - no edge handles
   const handles = isSelected && !isEditing ? [
     { position: 'nw', style: { top: -handleOffset, left: -handleOffset, cursor: 'nw-resize' } },
-    { position: 'n', style: { top: -handleOffset, left: '50%', marginLeft: -handleSize / 2, cursor: 'n-resize' } },
     { position: 'ne', style: { top: -handleOffset, right: -handleOffset, cursor: 'ne-resize' } },
-    { position: 'e', style: { top: '50%', right: -handleOffset, marginTop: -handleSize / 2, cursor: 'e-resize' } },
     { position: 'se', style: { bottom: -handleOffset, right: -handleOffset, cursor: 'se-resize' } },
-    { position: 's', style: { bottom: -handleOffset, left: '50%', marginLeft: -handleSize / 2, cursor: 's-resize' } },
-    { position: 'sw', style: { bottom: -handleOffset, left: -handleOffset, cursor: 'sw-resize' } },
-    { position: 'w', style: { top: '50%', left: -handleOffset, marginTop: -handleSize / 2, cursor: 'w-resize' } }
+    { position: 'sw', style: { bottom: -handleOffset, left: -handleOffset, cursor: 'sw-resize' } }
   ] : [];
 
   return (
@@ -434,8 +431,9 @@ export default function TransparentTextBox({
         outlineOffset: '0px', // Ingen offset för att outline ska ligga exakt på kanten
         backgroundColor: 'transparent',
         cursor: isEditing ? 'text' : (tool === 'edit-text' ? 'text' : (tool === 'text' ? 'text' : (tool === null ? 'pointer' : (isSelected && !isEditing ? 'move' : 'default')))),
-        // När highlight-verktyget eller add-text verktyget är aktivt ska text-boxar inte fånga klick.
-        pointerEvents: (tool === 'highlight' || tool === 'text') ? 'none' : 'auto',
+        // När highlight-verktyget är aktivt eller add-text är aktivt för ICKE-valda boxar, ska text-boxar inte fånga klick.
+        // Men valda textrutor ska alltid kunna interageras med för resize/drag.
+        pointerEvents: (tool === 'highlight' || (tool === 'text' && !isSelected)) ? 'none' : 'auto',
         boxSizing: 'content-box', // Använd content-box så att outline inte påverkar mått
         display: 'inline-block', // Låt containern expandera med innehållet
         overflow: 'visible', // Tillåt att descenders syns utanför containern om nödvändigt

@@ -1,16 +1,17 @@
 import { useState, useRef, useEffect } from 'react';
 import { rectPtToPx, rectPxToPt } from '../utils/coordMap';
 
-export default function PatchBox({ 
-  patchBox, 
-  zoom, 
-  onUpdate, 
+export default function PatchBox({
+  patchBox,
+  zoom,
+  onUpdate,
   onDelete,
   isSelected,
   pdfPage, // Target page (där patchen ska visas)
   sourcePdfPage, // Source page (där patchen kopieras från)
   pdfPageNum,
-  tool = null
+  tool = null,
+  onResizeStart
 }) {
   const [imageData, setImageData] = useState(patchBox.imageData || null);
   const containerRef = useRef(null);
@@ -28,11 +29,11 @@ export default function PatchBox({
         // Canvas-storleken ska matcha bildens upplösning, inte CSS-storleken
         const imgWidth = img.naturalWidth || img.width;
         const imgHeight = img.naturalHeight || img.height;
-        
+
         // Sätt canvas-storleken till bildens faktiska dimensioner
         canvasRef.current.width = imgWidth;
         canvasRef.current.height = imgHeight;
-        
+
         ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
         // Rita bilden i full upplösning
         ctx.drawImage(img, 0, 0);
@@ -116,7 +117,7 @@ export default function PatchBox({
     // För alla andra verktyg (inklusive text), låt klick gå igenom
     // (pointerEvents: 'none' borde redan hantera detta, men detta är en extra säkerhet)
   };
-  
+
   // Cursor: pointer när tool === null, move när vald och verktyget är aktivt, annars default
   let cursorStyle = 'default';
   if (tool === null) {
@@ -124,6 +125,25 @@ export default function PatchBox({
   } else if (isSelected && tool === 'patch') {
     cursorStyle = 'move';
   }
+
+  // Resize handles (endast när vald OCH patch-verktyget är aktivt eller tool är null)
+  const handleSize = 8;
+  const handleOffset = handleSize; // flytta handles utanför rutan
+  const showHandles = isSelected && (tool === 'patch' || tool === null);
+  const handles = showHandles ? [
+    { position: 'nw', style: { top: -handleOffset, left: -handleOffset, cursor: 'nw-resize' } },
+    { position: 'n', style: { top: -handleOffset, left: '50%', marginLeft: -handleSize / 2, cursor: 'n-resize' } },
+    { position: 'ne', style: { top: -handleOffset, right: -handleOffset, cursor: 'ne-resize' } },
+    { position: 'e', style: { top: '50%', right: -handleOffset, marginTop: -handleSize / 2, cursor: 'e-resize' } },
+    { position: 'se', style: { bottom: -handleOffset, right: -handleOffset, cursor: 'se-resize' } },
+    { position: 's', style: { bottom: -handleOffset, left: '50%', marginLeft: -handleSize / 2, cursor: 's-resize' } },
+    { position: 'sw', style: { bottom: -handleOffset, left: -handleOffset, cursor: 'sw-resize' } },
+    { position: 'w', style: { top: '50%', left: -handleOffset, marginTop: -handleSize / 2, cursor: 'w-resize' } }
+  ] : [];
+
+  // Get rotation and opacity from patchBox
+  const rotation = patchBox.rotation || 0;
+  const opacity = (patchBox.opacity ?? 100) / 100;
 
   return (
     <div
@@ -134,41 +154,77 @@ export default function PatchBox({
         top: `${targetRectPx.y}px`,
         width: `${targetRectPx.width}px`,
         height: `${targetRectPx.height}px`,
-        border: isSelected && tool === 'patch' ? '2px solid #00ff00' : tool === 'patch' ? '1px dashed rgba(0,255,0,0.5)' : 'none',
+        border: isSelected && (tool === 'patch' || tool === null) ? '2px solid #00ff00' : tool === 'patch' ? '1px dashed rgba(0,255,0,0.5)' : 'none',
         cursor: cursorStyle,
         boxSizing: 'border-box',
-        overflow: 'hidden',
-        zIndex: 1, // Patch boxes ska ligga under text boxes
-        pointerEvents: (tool === null || tool === 'patch') ? 'auto' : 'none' // Tillåt klick när tool === null (för selektion) eller när patch-verktyget är aktivt
+        zIndex: 3, // Patch boxes ska ligga OVAN whiteout boxes (zIndex: 2)
+        pointerEvents: (tool === null || tool === 'patch') ? 'auto' : 'none', // Tillåt klick när tool === null (för selektion) eller när patch-verktyget är aktivt
+        transform: `rotate(${rotation}deg)`,
+        transformOrigin: 'center',
+        opacity: opacity
       }}
       onMouseDown={(tool === null || tool === 'patch') ? handleMouseDown : undefined}
     >
-      {imageData ? (
-        <canvas
-          ref={canvasRef}
-          style={{
+      {/* Image container with overflow hidden */}
+      <div style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        overflow: 'hidden'
+      }}>
+        {imageData ? (
+          <canvas
+            ref={canvasRef}
+            style={{
+              width: '100%',
+              height: '100%',
+              display: 'block',
+              imageRendering: 'crisp-edges', // Förhindra bilineär interpolation
+              pointerEvents: tool === 'patch' ? 'auto' : 'none' // Följ samma logik som parent
+            }}
+          />
+        ) : (
+          <div style={{
             width: '100%',
             height: '100%',
-            display: 'block',
-            imageRendering: 'crisp-edges', // Förhindra bilineär interpolation
+            backgroundColor: 'rgba(0,255,0,0.1)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '12px',
+            color: '#666',
             pointerEvents: tool === 'patch' ? 'auto' : 'none' // Följ samma logik som parent
+          }}>
+            Laddar patch...
+          </div>
+        )}
+      </div>
+
+      {/* Resize handles - outside overflow hidden */}
+      {handles.map((handle) => (
+        <div
+          key={handle.position}
+          data-resize-handle={handle.position}
+          style={{
+            position: 'absolute',
+            width: `${handleSize}px`,
+            height: `${handleSize}px`,
+            backgroundColor: '#00ff00',
+            border: '1px solid #fff',
+            borderRadius: '2px',
+            ...handle.style,
+            zIndex: 10
+          }}
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            if (onResizeStart) {
+              onResizeStart(handle.position, e);
+            }
           }}
         />
-      ) : (
-        <div style={{
-          width: '100%',
-          height: '100%',
-          backgroundColor: 'rgba(0,255,0,0.1)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: '12px',
-          color: '#666',
-          pointerEvents: tool === 'patch' ? 'auto' : 'none' // Följ samma logik som parent
-        }}>
-          Laddar patch...
-        </div>
-      )}
+      ))}
     </div>
   );
 }

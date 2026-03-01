@@ -5,6 +5,7 @@ import { PDFDocument, degrees } from 'pdf-lib';
 import TransparentTextBox from './components/TransparentTextBox';
 import WhiteoutBox from './components/WhiteoutBox';
 import PatchBox from './components/PatchBox';
+import ImageSidebar from './components/ImageSidebar';
 import ShapeBox from './components/ShapeBox';
 import CommentBox from './components/CommentBox';
 import LandingPage from './components/LandingPage';
@@ -961,6 +962,8 @@ export default function App() {
       const keepPage = currentPageRef.current || currentPage;
 
       console.log('[DEBUG] Setting new pdfData and pdfDoc, saved scroll:', savedScrollTop);
+      // Suppress page updates from scroll during PDF reload to prevent page jump
+      suppressPageFromScrollRef.current = true;
       setPdfData(stateBytes.buffer.slice(0));
       setPdfDoc(newDoc);
       setPdfPages([]);
@@ -1072,6 +1075,7 @@ export default function App() {
   }, []);
 
   // Importera befintlig PDF-text till textBoxes (best effort, per text-item)
+  // Merge adjacent text items on the same line into single text boxes for better editing experience
   const importExistingPdfText = useCallback(async (doc) => {
     if (!doc) return [];
 
@@ -1082,6 +1086,8 @@ export default function App() {
         const viewport = page.getViewport({ scale: 1 });
         const textContent = await page.getTextContent();
 
+        // Step 1: Collect all text items with their computed positions
+        const items = [];
         for (const item of textContent.items) {
           const transform = pdfjsLib.Util.transform(viewport.transform, item.transform);
           const x = transform[4];
@@ -1092,22 +1098,106 @@ export default function App() {
 
           if (!item.str || widthPx <= 0 || heightPx <= 0) continue;
 
-          // Justera nedåt lite för att bättre matcha PDF-glyphernas baseline i canvas
+          // Baseline adjustment
           const baselineAdjustPx = heightPx * 0.18;
-          const rectPx = {
+          items.push({
+            text: item.str,
             x,
             y: y - heightPx + baselineAdjustPx,
             width: widthPx,
-            height: heightPx
+            height: heightPx,
+            baselineY: y, // raw baseline position for merging comparison
+            fontHeightPx
+          });
+        }
+
+        // Step 2: Sort items by Y (top to bottom), then X (left to right)
+        items.sort((a, b) => {
+          const yDiff = a.baselineY - b.baselineY;
+          if (Math.abs(yDiff) > 4) return -yDiff; // PDF Y increases downward in viewport transform
+          return a.x - b.x;
+        });
+
+        // Step 3: Merge adjacent items on the same line
+        const lines = [];
+        let currentLine = null;
+
+        for (const item of items) {
+          if (!currentLine) {
+            // Start a new line
+            currentLine = {
+              text: item.text,
+              x: item.x,
+              y: item.y,
+              width: item.width,
+              height: item.height,
+              baselineY: item.baselineY,
+              fontHeightPx: item.fontHeightPx
+            };
+            continue;
+          }
+
+          // Check if this item should be merged with the current line
+          const sameBaseline = Math.abs(item.baselineY - currentLine.baselineY) < 4;
+          const sameHeight = Math.abs(item.fontHeightPx - currentLine.fontHeightPx) < 4;
+          const gap = item.x - (currentLine.x + currentLine.width);
+
+          // Only merge truly adjacent text (words in a sentence).
+          // For tabular/columnar data, keep separate boxes to preserve layout.
+          // 1.5em is roughly the width of 1-2 spaces.
+          const maxGap = currentLine.fontHeightPx * 1.5;
+
+          if (sameBaseline && sameHeight && gap >= -5 && gap < maxGap) {
+            // Merge: extend the current line
+            // Calculate number of spaces to preserve visual gap
+            const spaceWidth = currentLine.fontHeightPx * 0.25; // Approximate width of a space char
+            let separator = '';
+
+            if (gap > spaceWidth * 0.5) {
+              const numSpaces = Math.round(gap / spaceWidth);
+              separator = ' '.repeat(Math.max(1, numSpaces));
+            }
+
+            currentLine.text += separator + item.text;
+            currentLine.width = (item.x + item.width) - currentLine.x;
+            // Update height to max of both
+            currentLine.height = Math.max(currentLine.height, item.height);
+          } else {
+            // Start a new line
+            lines.push(currentLine);
+            currentLine = {
+              text: item.text,
+              x: item.x,
+              y: item.y,
+              width: item.width,
+              height: item.height,
+              baselineY: item.baselineY,
+              fontHeightPx: item.fontHeightPx
+            };
+          }
+        }
+
+        // Don't forget the last line
+        if (currentLine) {
+          lines.push(currentLine);
+        }
+
+        // Step 4: Convert merged lines to text boxes
+        for (const line of lines) {
+          const rectPx = {
+            x: line.x,
+            y: line.y,
+            width: line.width,
+            height: line.height
           };
 
           const rectPt = rectPxToPt(rectPx, 1); // scale 1 => px≈pt
-          const fontSizePt = Math.max(MIN_FONT_PT, Math.round(fontHeightPx));
+          const fontSizePt = Math.max(MIN_FONT_PT, Math.round(line.fontHeightPx));
 
           imported.push({
             rect: rectPt,
             originalRect: rectPt,
-            text: item.str,
+            text: line.text,
             fontSizePt,
             fontFamily: 'Helvetica',
             color: '#000000',
@@ -1945,9 +2035,10 @@ export default function App() {
       if (!pending) return;
 
       const container = containerRef.current;
+      const pageEl = pageContainerRefs.current?.[pending.pageNum];
 
-      // For 'exact' alignment (text deletion), restore immediately when container is available
-      if (pending.align === 'exact' && container) {
+      // For 'exact' alignment (text deletion), restore immediately when container is available AND page element exists
+      if (pending.align === 'exact' && container && pageEl) {
         suppressPageFromScrollRef.current = true;
         container.scrollTo({
           top: Math.max(0, pending.scrollTop || 0),
@@ -1961,7 +2052,6 @@ export default function App() {
         return;
       }
 
-      const pageEl = pageContainerRefs.current?.[pending.pageNum];
       const canvasEl = canvasRefs.current?.[pending.pageNum];
       const canvasStyleH = canvasEl?.style?.height ? parseFloat(canvasEl.style.height) : NaN;
       const canvasReady = Number.isFinite(canvasStyleH) && canvasStyleH > 0;
@@ -2272,11 +2362,66 @@ export default function App() {
           throw new Error('Ogiltig bilddata');
         }
 
-        setPendingImageData(dataUrl);
-        setTool('image');
-        setSelectedElement(null);
-        setSelectedType(null);
-        success(t('success.imageReady', 'Bild laddad - dra för att placera'));
+        // Load image to get natural dimensions
+        const img = new Image();
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
+          img.onerror = () => reject(new Error('Kunde inte ladda bildens dimensioner'));
+          img.src = dataUrl;
+        });
+
+        // Calculate default size: max 300px width, maintain aspect ratio
+        const maxWidthPx = 300;
+        let widthPx = img.naturalWidth;
+        let heightPx = img.naturalHeight;
+        if (widthPx > maxWidthPx) {
+          const scale = maxWidthPx / widthPx;
+          widthPx = maxWidthPx;
+          heightPx = heightPx * scale;
+        }
+
+        // Calculate position: center on visible area of current page
+        const pageNum = currentPage || 1;
+        const pageContainer = pageContainerRefs.current?.[pageNum];
+        const container = containerRef.current;
+
+        let xPx = 100; // Fallback
+        let yPx = 100;
+
+        if (pageContainer && container) {
+          // Get the visible viewport relative to the page
+          const pageRect = pageContainer.getBoundingClientRect();
+          const containerRect = container.getBoundingClientRect();
+
+          // Calculate the visible center relative to the page canvas
+          const visibleCenterX = (containerRect.left + containerRect.width / 2) - pageRect.left;
+          const visibleCenterY = (containerRect.top + containerRect.height / 2) - pageRect.top;
+
+          // Position image centered on visible area
+          xPx = Math.max(10, visibleCenterX - widthPx / 2);
+          yPx = Math.max(10, visibleCenterY - heightPx / 2);
+        }
+
+        // Convert to points
+        const targetRectPt = rectPxToPt({ x: xPx, y: yPx, width: widthPx, height: heightPx }, zoom);
+
+        // Create image patch
+        const newImagePatch = {
+          targetRect: targetRectPt,
+          pageIndex: pageNum - 1,
+          imageData: dataUrl
+        };
+
+        const newPatchBoxes = [...patchBoxes, newImagePatch];
+        setPatchBoxes(newPatchBoxes);
+        setSelectedElement(patchBoxes.length);
+        setSelectedType('patch');
+        saveToHistory(null, null, newPatchBoxes, null, commentBoxes);
+
+        // Clear tool state
+        setTool(null);
+        setPendingImageData(null);
+        success(t('success.imagePlaced', 'Bild placerad'));
       } catch (err) {
         console.error('Fel vid laddning av bild:', err);
         error(t('errors.imageLoadFailed', 'Kunde inte ladda bild') + ': ' + err.message);
@@ -2607,18 +2752,8 @@ export default function App() {
         }
       }
 
-      // Om patch är vald, aktivera patch-verktyget om tool === null
-      let patchToolJustActivated = false;
-      if (clickedType === 'patch') {
-        // Spara scroll-position innan vi ändrar tool (för att behålla PDF-canvas position)
-        if (containerRef.current) {
-          scrollPositionRef.current = containerRef.current.scrollTop;
-        }
-        if (tool === null) {
-          patchToolJustActivated = true;
-          setTool('patch');
-        }
-      }
+      // Om patch är vald, sidebar visas baserat på selectedType
+      // Vi behöver inte aktivera patch-verktyget (som är "Copy Area")
 
       // Om shape är vald, aktivera motsvarande shape-verktyg så att sidebar visas
       let shapeToolJustActivated = false;
@@ -2676,7 +2811,7 @@ export default function App() {
       }
 
       // Om patch är vald, starta drag om patch-verktyget är aktivt ELLER om vi just aktiverade det
-      if (clickedType === 'patch' && (tool === 'patch' || patchToolJustActivated)) {
+      if (clickedType === 'patch' && (tool === 'patch' || tool === null)) {
         const pb = patchBoxes[clickedElement];
         const pbRect = rectPtToPx(pb.targetRect, zoom);
         setIsDragging(true);
@@ -2951,15 +3086,6 @@ export default function App() {
     // För whiteout, börja rita (endast om verktyget är aktivt och vi inte klickade på en befintlig ruta)
     // VIKTIGT: Detta måste komma EFTER avmarkeringslogiken så att valda whiteout-element avmarkeras först
     if (tool === 'whiteout' && clickedElement === null && selectedType !== 'whiteout') {
-      setIsDrawing(true);
-      setDrawStart({ x, y });
-      setCurrentRect({ x, y, width: 0, height: 0 });
-      setDrawingPage(clickedPage.pageNum);
-      return;
-    }
-
-    // Bild-verktyg: dra för att placera vald bild
-    if (tool === 'image' && pendingImageData && clickedElement === null) {
       setIsDrawing(true);
       setDrawStart({ x, y });
       setCurrentRect({ x, y, width: 0, height: 0 });
@@ -3521,14 +3647,16 @@ export default function App() {
       return;
     }
 
-    // Hantera resize av shape (rektanglar/cirklar) och LINKS
-    if (isResizing && dragStart && originalRect && selectedElement !== null && (selectedType === 'shape' || selectedType === 'link')) {
+    // Hantera resize av shape (rektanglar/cirklar), LINKS och PATCHES
+    if (isResizing && dragStart && originalRect && selectedElement !== null && (selectedType === 'shape' || selectedType === 'link' || selectedType === 'patch')) {
       const isShape = selectedType === 'shape';
-      const sb = isShape ? shapeBoxes[selectedElement] : linkBoxes[selectedElement];
+      const isPatch = selectedType === 'patch';
+      const sb = isShape ? shapeBoxes[selectedElement] : (isPatch ? patchBoxes[selectedElement] : linkBoxes[selectedElement]);
       const isLineOrArrow = isShape && (sb.type === 'line' || sb.type === 'arrow') && sb.startPoint && sb.endPoint;
 
-      if (!isLineOrArrow && sb.rect) {
+      if (!isLineOrArrow && (sb.rect || (isPatch && sb.targetRect))) {
         // Rektangel-baserad resize
+        const rectProp = isPatch ? sb.targetRect : sb.rect;
         const origRectPx = rectPtToPx(originalRect, zoom);
         const x = e.clientX - canvasRect.left;
         const y = e.clientY - canvasRect.top;
@@ -3572,6 +3700,10 @@ export default function App() {
           const newBoxes = [...shapeBoxes];
           newBoxes[selectedElement] = { ...sb, rect: newRectPt };
           setShapeBoxes(newBoxes);
+        } else if (isPatch) {
+          const newBoxes = [...patchBoxes];
+          newBoxes[selectedElement] = { ...sb, targetRect: newRectPt };
+          setPatchBoxes(newBoxes);
         } else {
           const newBoxes = [...linkBoxes];
           newBoxes[selectedElement] = { ...sb, rect: newRectPt };
@@ -3930,23 +4062,6 @@ export default function App() {
       setSelectedElement(whiteoutBoxes.length);
       setSelectedType('whiteout');
       saveToHistory(null, newWhiteoutBoxes, null, null, commentBoxes);
-    } else if (tool === 'image' && pendingImageData) {
-      const drawingPageNum = drawingPage || currentPage;
-      const newImagePatch = {
-        targetRect: rectPt,
-        pageIndex: drawingPageNum - 1,
-        imageData: pendingImageData
-      };
-      const newPatchBoxes = [...patchBoxes, newImagePatch];
-      setPatchBoxes(newPatchBoxes);
-      setSelectedElement(patchBoxes.length);
-      setSelectedType('patch');
-      saveToHistory(null, null, newPatchBoxes, null, commentBoxes);
-
-      // Avaktivera bild-verktyget efter placering (redigera är primärt)
-      setTool(null);
-      setPendingImageData(null);
-      success(t('success.imagePlaced', 'Bild placerad'));
     } else if (tool === 'patch' && patchMode === 'select') {
       // Spara sourceRect och växla till place-mode
       const drawingPageNum = drawingPage || currentPage;
@@ -4030,12 +4145,21 @@ export default function App() {
     const containerRect = container.getBoundingClientRect();
     const pageTop = pageContainer.offsetTop;
 
-    // Scrolla så att sidan är i mitten av viewport
-    const scrollPosition = pageTop - containerRect.height / 2 + pageContainer.offsetHeight / 2;
+    // Scrolla så att toppen av sidan visas (med lite marginal)
+    const scrollPosition = pageTop - 20;
+
+    // Prevent scroll listener from updating current page during smooth scroll
+    suppressPageFromScrollRef.current = true;
+
     container.scrollTo({
       top: Math.max(0, scrollPosition),
       behavior: 'smooth'
     });
+
+    // Reset suppression after scroll animation is likely finished
+    setTimeout(() => {
+      suppressPageFromScrollRef.current = false;
+    }, 700);
   };
 
   // Scrolla till ett specifikt element (rect i punkter)
@@ -5362,8 +5486,137 @@ export default function App() {
         onToggleSettings={() => setShowSettingsSidebar(v => !v)}
       />
 
+      {/* Search Panel - Positioned below toolbar, above main content */}
+      {showSearchPanel && pdfDoc && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+          padding: '6px 12px',
+          backgroundColor: 'var(--bg-secondary)',
+          borderBottom: '1px solid var(--border-color)',
+          position: 'relative',
+          zIndex: 99
+        }}>
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              // Debounced search
+              clearTimeout(searchInputRef.current?.searchTimeout);
+              searchInputRef.current.searchTimeout = setTimeout(() => {
+                performSearch(e.target.value);
+              }, 300);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                if (e.shiftKey) {
+                  prevSearchResult();
+                } else {
+                  nextSearchResult();
+                }
+              } else if (e.key === 'Escape') {
+                closeSearch();
+              }
+            }}
+            placeholder={t('search.placeholder', 'Sök i dokumentet...')}
+            style={{
+              flex: 1,
+              maxWidth: '280px',
+              padding: '6px 10px',
+              border: '1px solid var(--border-color)',
+              borderRadius: '4px',
+              fontSize: '13px',
+              outline: 'none',
+              backgroundColor: 'var(--bg-card)',
+              color: 'var(--text-primary)'
+            }}
+          />
+
+          {searchResults.length > 0 && (
+            <span style={{ color: 'var(--text-secondary)', fontSize: '12px', whiteSpace: 'nowrap', fontWeight: 500 }}>
+              {currentSearchIndex + 1} / {searchResults.length}
+            </span>
+          )}
+
+          {searchQuery && searchResults.length === 0 && (
+            <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
+              {t('search.noResults', 'Inga träffar')}
+            </span>
+          )}
+
+          <button
+            onClick={prevSearchResult}
+            disabled={searchResults.length === 0}
+            style={{
+              width: '28px',
+              height: '28px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: searchResults.length === 0 ? 'var(--bg-secondary)' : 'var(--bg-card)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '4px',
+              cursor: searchResults.length === 0 ? 'not-allowed' : 'pointer',
+              fontSize: '16px',
+              color: searchResults.length === 0 ? 'var(--text-secondary)' : 'var(--text-primary)',
+              padding: 0
+            }}
+            title={t('search.previous', 'Föregående träff')}
+          >
+            ‹
+          </button>
+
+          <button
+            onClick={nextSearchResult}
+            disabled={searchResults.length === 0}
+            style={{
+              width: '28px',
+              height: '28px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: searchResults.length === 0 ? 'var(--bg-secondary)' : 'var(--bg-card)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '4px',
+              cursor: searchResults.length === 0 ? 'not-allowed' : 'pointer',
+              fontSize: '16px',
+              color: searchResults.length === 0 ? 'var(--text-secondary)' : 'var(--text-primary)',
+              padding: 0
+            }}
+            title={t('search.next', 'Nästa träff')}
+          >
+            ›
+          </button>
+
+          <button
+            onClick={closeSearch}
+            style={{
+              width: '28px',
+              height: '28px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: 'transparent',
+              color: 'var(--text-secondary)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: '600',
+              padding: 0
+            }}
+            title={t('search.close', 'Stäng')}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Main Content Area: Flex container for Sidebar and Canvas */}
-      <div style={{ display: 'flex', height: 'calc(100vh - 60px)', overflow: 'hidden' }}>
+      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
 
         {/* Left Side: Canvas / Sidebar */}
         <div style={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'flex' }}>
@@ -5559,121 +5812,11 @@ export default function App() {
             )}
           </div>
 
-          {/* Search Panel */}
-          {showSearchPanel && pdfDoc && (
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
-              padding: '8px 16px',
-              backgroundColor: '#f5f5f5',
-              borderBottom: '1px solid #ddd',
-              position: 'relative',
-              zIndex: 99
-            }}>
-              <input
-                ref={searchInputRef}
-                type="text"
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  // Debounced search
-                  clearTimeout(searchInputRef.current?.searchTimeout);
-                  searchInputRef.current.searchTimeout = setTimeout(() => {
-                    performSearch(e.target.value);
-                  }, 300);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    if (e.shiftKey) {
-                      prevSearchResult();
-                    } else {
-                      nextSearchResult();
-                    }
-                  } else if (e.key === 'Escape') {
-                    closeSearch();
-                  }
-                }}
-                placeholder={t('search.placeholder', 'Sök i dokumentet...')}
-                style={{
-                  flex: 1,
-                  maxWidth: '300px',
-                  padding: '8px 12px',
-                  border: '1px solid #ccc',
-                  borderRadius: '4px',
-                  fontSize: '14px',
-                  outline: 'none'
-                }}
-              />
-
-              {searchResults.length > 0 && (
-                <span style={{ color: '#666', fontSize: '14px', whiteSpace: 'nowrap' }}>
-                  {currentSearchIndex + 1} {t('toolbar.of', 'av')} {searchResults.length}
-                </span>
-              )}
-
-              {searchQuery && searchResults.length === 0 && (
-                <span style={{ color: '#999', fontSize: '14px' }}>
-                  {t('search.noResults', 'Inga träffar')}
-                </span>
-              )}
-
-              <button
-                onClick={prevSearchResult}
-                disabled={searchResults.length === 0}
-                style={{
-                  padding: '6px 12px',
-                  backgroundColor: searchResults.length === 0 ? '#ccc' : '#fff',
-                  border: '1px solid #ccc',
-                  borderRadius: '4px',
-                  cursor: searchResults.length === 0 ? 'not-allowed' : 'pointer',
-                  fontSize: '14px'
-                }}
-                title={t('search.previous', 'Föregående träff')}
-              >
-                ‹
-              </button>
-
-              <button
-                onClick={nextSearchResult}
-                disabled={searchResults.length === 0}
-                style={{
-                  padding: '6px 12px',
-                  backgroundColor: searchResults.length === 0 ? '#ccc' : '#fff',
-                  border: '1px solid #ccc',
-                  borderRadius: '4px',
-                  cursor: searchResults.length === 0 ? 'not-allowed' : 'pointer',
-                  fontSize: '14px'
-                }}
-                title={t('search.next', 'Nästa träff')}
-              >
-                ›
-              </button>
-
-              <button
-                onClick={closeSearch}
-                style={{
-                  padding: '6px 12px',
-                  backgroundColor: '#e74c3c',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  fontWeight: '500'
-                }}
-              >
-                {t('search.close', 'Stäng')}
-              </button>
-            </div>
-          )}
-
           {/* Main Content Area - med flex row för sidebar och PDF viewer */}
           <div style={{
             display: 'flex',
             flexDirection: 'row',
             flex: 1,
-            height: 'calc(100vh - 60px)',
             position: 'relative',
             overflow: 'hidden'
           }}>
@@ -6165,6 +6308,23 @@ export default function App() {
 
             {/* Link Settings Sidebar */}
 
+
+            {/* Image Settings Sidebar - Visas när en bild/patch är markerad */}
+            {selectedElement !== null && selectedType === 'patch' && patchBoxes[selectedElement] && (
+              <ImageSidebar
+                patchBox={patchBoxes[selectedElement]}
+                sidebarWidth={pdfDoc ? sidebarWidth : 0}
+                onUpdate={(updated) => {
+                  const newBoxes = [...patchBoxes];
+                  newBoxes[selectedElement] = updated;
+                  setPatchBoxes(newBoxes);
+                  saveToHistory(null, null, newBoxes, null, commentBoxes);
+                }}
+                onDelete={() => {
+                  handleDelete();
+                }}
+              />
+            )}
 
             {/* Comment Settings Sidebar - Visas när comment-verktyget är aktivt */}
             {tool === 'comment' && (
@@ -7674,6 +7834,8 @@ export default function App() {
                               if (el) canvasRefs.current[pageNum] = el;
                             }}
                             style={{
+                              width: `${viewport.width}px`,
+                              height: `${viewport.height}px`,
                               border: '1px solid #ccc',
                               boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
                               display: 'block',
@@ -7777,38 +7939,7 @@ export default function App() {
                               );
                             })}
 
-                          {/* Render patch boxes för denna sida */}
-                          {patchBoxes
-                            .filter((patchBox) => {
-                              const boxPageIndex = patchBox.pageIndex !== undefined ? patchBox.pageIndex : 0;
-                              return boxPageIndex === index;
-                            })
-                            .map((patchBox, localIndex) => {
-                              const globalIndex = patchBoxes.findIndex(pb => pb === patchBox);
-                              // Hämta källsidan om den finns, annars använd targetsidan (för bakåtkompatibilitet)
-                              const sourcePageIndex = patchBox.sourcePageIndex !== undefined
-                                ? patchBox.sourcePageIndex
-                                : (patchBox.pageIndex !== undefined ? patchBox.pageIndex : index);
-                              const sourcePage = pdfPages[sourcePageIndex] || null;
-                              return (
-                                <PatchBox
-                                  key={`patch-${pageNum}-${globalIndex}`}
-                                  patchBox={patchBox}
-                                  zoom={zoom}
-                                  pdfPage={page} // Target page (där patchen visas)
-                                  sourcePdfPage={sourcePage} // Source page (där patchen kopieras från)
-                                  pdfPageNum={pageNum}
-                                  isSelected={selectedElement === globalIndex && selectedType === 'patch'}
-                                  tool={tool}
-                                  onUpdate={(updated) => {
-                                    const newBoxes = [...patchBoxes];
-                                    newBoxes[globalIndex] = updated;
-                                    setPatchBoxes(newBoxes);
-                                    saveToHistory(null, null, newBoxes, null, commentBoxes);
-                                  }}
-                                />
-                              );
-                            })}
+
 
                           {/* Frihand-highlight strokes för denna sida */}
                           <svg
@@ -8259,6 +8390,55 @@ export default function App() {
                                           setOriginalRect(shapeBox.rect);
                                         }
                                       }
+                                    }
+                                  }}
+                                />
+                              );
+                            })}
+
+
+                          {/* Render patch boxes för denna sida (moved here for z-index) */}
+                          {patchBoxes
+                            .filter((patchBox) => {
+                              const boxPageIndex = patchBox.pageIndex !== undefined ? patchBox.pageIndex : 0;
+                              return boxPageIndex === index;
+                            })
+                            .map((patchBox, localIndex) => {
+                              const globalIndex = patchBoxes.findIndex(pb => pb === patchBox);
+                              // Hämta källsidan om den finns, annars använd targetsidan (för bakåtkompatibilitet)
+                              const sourcePageIndex = patchBox.sourcePageIndex !== undefined
+                                ? patchBox.sourcePageIndex
+                                : (patchBox.pageIndex !== undefined ? patchBox.pageIndex : index);
+                              const sourcePage = pdfPages[sourcePageIndex] || null;
+                              return (
+                                <PatchBox
+                                  key={`patch-${pageNum}-${globalIndex}`}
+                                  patchBox={patchBox}
+                                  zoom={zoom}
+                                  pdfPage={page} // Target page (där patchen visas)
+                                  sourcePdfPage={sourcePage} // Source page (där patchen kopieras från)
+                                  pdfPageNum={pageNum}
+                                  isSelected={selectedElement === globalIndex && selectedType === 'patch'}
+                                  tool={tool}
+                                  onUpdate={(updated) => {
+                                    const newBoxes = [...patchBoxes];
+                                    newBoxes[globalIndex] = updated;
+                                    setPatchBoxes(newBoxes);
+                                    saveToHistory(null, null, newBoxes, null, commentBoxes);
+                                  }}
+                                  onResizeStart={(handle, e) => {
+                                    e.stopPropagation();
+                                    setSelectedElement(globalIndex);
+                                    setSelectedType('patch');
+                                    setIsResizing(true);
+                                    setResizeHandle(handle);
+                                    const canvasRef = canvasRefs.current[pageNum];
+                                    if (canvasRef) {
+                                      const canvasRect = canvasRef.getBoundingClientRect();
+                                      const x = e.clientX - canvasRect.left;
+                                      const y = e.clientY - canvasRect.top;
+                                      setDragStart({ x, y });
+                                      setOriginalRect(patchBox.targetRect);
                                     }
                                   }}
                                 />
