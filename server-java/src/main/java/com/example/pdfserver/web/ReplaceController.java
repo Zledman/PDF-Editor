@@ -64,9 +64,9 @@ public class ReplaceController {
           System.out.println("  CropBox: " + page.getCropBox());
           System.out.println("  Rotation: " + page.getRotation());
 
-          removeTextInBBox(doc, page, rp);
+          boolean textRemoved = removeTextInBBox(doc, page, rp);
           // Lägg ny text ovanpå (utan vit bakgrund)
-          writeNewText(doc, page, rp);
+          writeNewText(doc, page, rp, textRemoved);
         }
       }
 
@@ -79,13 +79,15 @@ public class ReplaceController {
     }
   }
 
-  private void removeTextInBBox(PDDocument doc, PDPage page, ReplaceRequest.Replacement rp) throws IOException {
+  /** @return true om minst en text-operator faktiskt togs bort. */
+  private boolean removeTextInBBox(PDDocument doc, PDPage page, ReplaceRequest.Replacement rp) throws IOException {
     PDFStreamParser parser = new PDFStreamParser(page);
     parser.parse();
     List<Object> tokens = parser.getTokens();
 
     List<Object> newTokens = new ArrayList<>();
     List<COSBase> args = new ArrayList<>();
+    boolean removed = false;
 
     // Minimal text-state
     Matrix textMatrix = new Matrix();
@@ -181,6 +183,7 @@ public class ReplaceController {
             flush(newTokens, args, op);
           } else {
             System.out.println("    REMOVING Tj: " + (str != null ? str.getString() : "null"));
+            removed = true;
             args.clear(); // skip operand+op
           }
         }
@@ -195,6 +198,7 @@ public class ReplaceController {
             flush(newTokens, args, op);
           } else {
             System.out.println("    REMOVING TJ array");
+            removed = true;
             args.clear();
           }
         }
@@ -211,7 +215,9 @@ public class ReplaceController {
                   System.out.println("    Page CTM at Do: [" + ctm.getScaleX() + ", " + ctm.getShearY() +
                       ", " + ctm.getShearX() + ", " + ctm.getScaleY() +
                       ", " + ctm.getTranslateX() + ", " + ctm.getTranslateY() + "]");
-                  removeTextFromFormXObject(doc, formXObj, page, rp, ctm);
+                  if (removeTextFromFormXObject(doc, formXObj, page, rp, ctm)) {
+                    removed = true;
+                  }
                 }
               } catch (Exception e) {
                 System.out.println("    Error processing XObject " + xobjName + ": " + e.getMessage());
@@ -231,9 +237,11 @@ public class ReplaceController {
       writer.writeTokens(newTokens);
     }
     page.setContents(newStream);
+    return removed;
   }
 
-  private void removeTextFromFormXObject(PDDocument doc, PDFormXObject formXObj, PDPage page,
+  /** @return true om minst en text-operator togs bort ur XObject:et. */
+  private boolean removeTextFromFormXObject(PDDocument doc, PDFormXObject formXObj, PDPage page,
       ReplaceRequest.Replacement rp, Matrix pageCTM) throws IOException {
     // Get XObject's transformation matrix (default is identity)
     Matrix xobjMatrix = formXObj.getMatrix();
@@ -354,6 +362,7 @@ public class ReplaceController {
       }
       System.out.println("    XObject content stream updated");
     }
+    return modified;
   }
 
   private static void flush(List<Object> out, List<COSBase> args, Operator op) {
@@ -422,7 +431,36 @@ public class ReplaceController {
     }
   }
 
-  private static void writeNewText(PDDocument doc, PDPage page, ReplaceRequest.Replacement rp) throws IOException {
+  /** Parse background color from "rgb(r,g,b)" or "#RRGGBB" format. Falls back to white. */
+  private static float[] parseBgColor(String bgColor) {
+    if (bgColor == null || bgColor.isEmpty()) return new float[] { 1f, 1f, 1f };
+    String s = bgColor.trim();
+    float[] result = null;
+    // Handle "rgb(r,g,b)" format
+    if (s.startsWith("rgb(") && s.endsWith(")")) {
+      try {
+        String inner = s.substring(4, s.length() - 1);
+        String[] parts = inner.split(",");
+        if (parts.length == 3) {
+          float r = Float.parseFloat(parts[0].trim()) / 255f;
+          float g = Float.parseFloat(parts[1].trim()) / 255f;
+          float b = Float.parseFloat(parts[2].trim()) / 255f;
+          result = new float[] { Math.max(0, Math.min(1, r)), Math.max(0, Math.min(1, g)), Math.max(0, Math.min(1, b)) };
+        }
+      } catch (Exception e) { /* fall through */ }
+    }
+    // Handle "#RRGGBB" format
+    if (result == null && s.startsWith("#")) result = parseHex(s);
+    if (result == null) return new float[] { 1f, 1f, 1f };
+    // Snap near-white to pure white to avoid faint gray rectangles
+    if (result[0] >= 0.97f && result[1] >= 0.97f && result[2] >= 0.97f) {
+      return new float[] { 1f, 1f, 1f };
+    }
+    return result;
+  }
+
+  private static void writeNewText(PDDocument doc, PDPage page, ReplaceRequest.Replacement rp, boolean textRemoved)
+      throws IOException {
     float size = rp.size > 0 ? rp.size : 12f;
     float[] rgb = parseHex(rp.color);
 
@@ -435,12 +473,49 @@ public class ReplaceController {
     text = text.replaceAll("[\\u0000-\\u0009\\u000B-\\u001F]", " ");
     String[] lines = text.split("\n", -1);
 
+    float pageH = page.getMediaBox().getHeight();
+
     try (PDPageContentStream cs = new PDPageContentStream(doc, page, PDPageContentStream.AppendMode.APPEND, true,
         true)) {
+      // Rita en vit rektangel (whiteout) över originaltext-området som backup
+      // ifall removeTextInBBox inte hittade alla text-operatorer.
+      //
+      // bbox:ens underkant ligger ~0.18×radhöjd under baslinjen (descender-utrymme).
+      // Så långt ner behövs bara om originaltexten faktiskt finns kvar — annars äter
+      // rektangeln upp t.ex. en ramlinje strax under texten. Togs texten bort på
+      // riktigt räcker det att sluta i höjd med baslinjen.
+      float padX = size * 0.1f;   // Liten horisontell marginal
+      float padTop = size * 0.2f; // Lite uppåt för ascenders
+      // Positivt = trimma upp mot baslinjen, negativt = extra marginal nedåt.
+      float trimBot = textRemoved ? rp.bbox.height * 0.18f : -(size * 0.05f);
+      float whiteX = rp.bbox.x - padX;
+      float whiteY = pageH - (rp.bbox.y + rp.bbox.height) + trimBot;
+      float whiteW = rp.bbox.width + 2 * padX;
+      float whiteH = rp.bbox.height + padTop - trimBot;
+
+      // Har klienten mätt upp en ramlinje strax under texten: klipp rektangeln
+      // ovanför den, annars suddas linjen bort.
+      if (rp.maskBottom != null) {
+        float limitY = pageH - rp.maskBottom; // top-left -> bottom-left
+        if (limitY > whiteY) {
+          whiteH -= (limitY - whiteY);
+          whiteY = limitY;
+        }
+      }
+      if (whiteH > 0) {
+        float[] bgRgb = parseBgColor(rp.bgColor);
+        cs.setNonStrokingColor(bgRgb[0], bgRgb[1], bgRgb[2]);
+        cs.addRect(whiteX, whiteY, whiteW, whiteH);
+        cs.fill();
+      }
+
+      // Rita ny text ovanpå
       cs.beginText();
       try {
         cs.setRenderingMode(RenderingMode.FILL);
-        cs.setFont(PDType1Font.HELVETICA, size);
+        PDType1Font pdfFont = (rp.font != null && rp.font.contains("Bold"))
+            ? PDType1Font.HELVETICA_BOLD : PDType1Font.HELVETICA;
+        cs.setFont(pdfFont, size);
         cs.setNonStrokingColor(rgb[0], rgb[1], rgb[2]);
 
         // Leading (radavstånd) i PDF user space.
@@ -448,7 +523,6 @@ public class ReplaceController {
         cs.setLeading(size * 1.0f);
 
         // Konvertera y från top-left (frontend) till bottom-left (PDF)
-        float pageH = page.getMediaBox().getHeight();
         // Baseline i pdfExport.js: height - rect.y - (fontSizePt * 0.85)
         float baselineY = pageH - rp.bbox.y - (size * 0.85f);
         cs.newLineAtOffset(rp.bbox.x, baselineY);

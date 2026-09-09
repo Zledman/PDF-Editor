@@ -522,6 +522,9 @@
     "copied": "Element copied",
     "pasted": "{{count}} element(s) pasted"
   },
+  "info": {
+    "fontStyleWarning": "The document's original fonts cannot be used for editing. Modified text will use a default font (Helvetica)."
+  },
   "downloadModal": {
     "title": "Well done!",
     "subtitle": "Choose a file format to download your file",
@@ -647,6 +650,31 @@
       "3": {
         "title": "Download",
         "description": "Save your polished PDF moment and share it instantly."
+      }
+    }
+  },
+  "faq": {
+    "title": "Frequently Asked Questions",
+    "items": {
+      "1": {
+        "question": "Is PDFMoment free to use?",
+        "answer": "Yes, PDFMoment is completely free during Early Access. You can edit, create, and export PDF files at no cost."
+      },
+      "2": {
+        "question": "Are my files uploaded to a server?",
+        "answer": "No, all PDF files are processed locally in your browser. Your documents never leave your device."
+      },
+      "3": {
+        "question": "What file formats are supported?",
+        "answer": "You can open and edit PDF files. Export is available as PDF, and we're working on support for more formats like PNG and JPG."
+      },
+      "4": {
+        "question": "Is there a file size limit?",
+        "answer": "Since everything runs in the browser, performance depends on your device. Most PDF files up to 100 MB work without issues."
+      },
+      "5": {
+        "question": "Can I use PDFMoment on mobile?",
+        "answer": "PDFMoment is optimized for desktop browsers, but basic features also work on tablets and mobile devices."
       }
     }
   }

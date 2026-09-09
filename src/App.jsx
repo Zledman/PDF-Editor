@@ -37,12 +37,61 @@ import { exportPDF } from './services/pdfExport';
 import { loadPDF } from './services/pdfService';
 import { exportAsPDF, exportAsPNG, exportAsJPG, exportAsExcel, exportAsWord, exportAsPPTX } from './services/fileExport';
 import { pxToPt, rectPxToPt, rectPtToPx, pointPxToPt, pointPtToPx, isPointNearRectBorder, isPointNearCircleBorder } from './utils/coordMap';
+import { ocrImage } from './services/imageOcr';
 import { MIN_FONT_PT } from './utils/textLayoutConstants';
 
 // Konfigurera PDF.js worker
 if (typeof window !== 'undefined') {
   // Använd CDN för PDF.js worker
   pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+}
+
+/**
+ * Väljer bakgrundsfärgen ur en samling samplade pixlar.
+ *
+ * Ett medelvärde blir fel så fort strimlan snuddar vid en ramlinje eller en
+ * intilliggande textrad: de antialiasade kantpixlarna drar ner snittet och
+ * resultatet blir en ljusgrå ruta på vit bakgrund. Bakgrunden är däremot alltid
+ * den vanligaste färgen, så vi tar den dominerande nyansen i stället.
+ *
+ * @param {Array<[number,number,number]>} pixels
+ * @returns {{r:number,g:number,b:number}|null} null om ingen färg dominerar
+ */
+function dominantColor(pixels) {
+  if (!pixels || pixels.length === 0) return null;
+
+  // Kvantisera till 16-stegsbuckets så att brus i samma nyans hamnar ihop.
+  const buckets = new Map();
+  for (const p of pixels) {
+    const key = ((p[0] >> 4) << 8) | ((p[1] >> 4) << 4) | (p[2] >> 4);
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      bucket = { count: 0, r: 0, g: 0, b: 0 };
+      buckets.set(key, bucket);
+    }
+    bucket.count++;
+    bucket.r += p[0];
+    bucket.g += p[1];
+    bucket.b += p[2];
+  }
+
+  let best = null;
+  for (const bucket of buckets.values()) {
+    if (!best || bucket.count > best.count) best = bucket;
+  }
+
+  // Dominerar ingen nyans är strimlan för brokig (ram, text, bild) för att lita
+  // på — bättre att låta anroparen falla tillbaka på vitt.
+  if (best.count < pixels.length * 0.5) return null;
+
+  const r = Math.round(best.r / best.count);
+  const g = Math.round(best.g / best.count);
+  const b = Math.round(best.b / best.count);
+
+  // Snäpp till rent vitt när färgen ändå är omärkbart nära — annars syns
+  // maskrektangeln som en svagt grå platta mot papperet.
+  if (r >= 246 && g >= 246 && b >= 246) return { r: 255, g: 255, b: 255 };
+  return { r, g, b };
 }
 
 export default function App() {
@@ -761,85 +810,47 @@ export default function App() {
     const canvas = canvasRefs.current?.[pageNum];
     if (!canvas || !rectPx) return null;
     const ctx = canvas.getContext('2d');
-    const x = Math.max(0, Math.floor(rectPx.x));
-    const y = Math.max(0, Math.floor(rectPx.y));
-    const w = Math.max(1, Math.floor(rectPx.width));
-    const h = Math.max(1, Math.floor(rectPx.height));
-    const rw = Math.min(w, canvas.width - x);
-    const rh = Math.min(h, canvas.height - y);
+    // Canvas is rendered at dpr scale, so multiply CSS pixel coords by dpr
+    const dpr = typeof window !== 'undefined' ? Math.max(2, window.devicePixelRatio || 1) : 2;
+    const bx = Math.max(0, Math.floor(rectPx.x * dpr));
+    const by = Math.max(0, Math.floor(rectPx.y * dpr));
+    const bw = Math.max(1, Math.floor(rectPx.width * dpr));
+    const cw = canvas.width;
+    const ch = canvas.height;
 
-    // NOTE: This is used to pick a "background" mask color for edited imported text.
-    // A naïve average includes dark glyph pixels -> gray boxes when deleting text.
-    // To approximate background, we bias toward the brightest pixels in the sampled area.
+    // Sample thin strips ABOVE and BELOW the text box to get background color
+    // (avoids dark text pixels inside the rect)
+    const stripH = Math.max(2, Math.round(4 * dpr));
+    const samplePoints = [];
+
     try {
-      const img = ctx.getImageData(x, y, rw, rh);
-      const data = img.data;
-      const totalPixels = Math.floor(data.length / 4);
-      if (!totalPixels) return null;
-
-      // Limit work: sample at most ~1200 pixels (stride over the buffer).
-      const stridePx = Math.max(1, Math.floor(Math.sqrt(totalPixels / 1200)));
-      const stride = stridePx * 4;
-
-      const hist = new Array(256).fill(0);
-      let samples = 0;
-
-      for (let i = 0; i < data.length; i += stride) {
-        const rr = data[i];
-        const gg = data[i + 1];
-        const bb = data[i + 2];
-        // perceived-ish brightness, cheap and good enough here
-        const lum = Math.max(0, Math.min(255, Math.round((rr + gg + bb) / 3)));
-        hist[lum]++;
-        samples++;
-      }
-
-      if (!samples) return null;
-
-      // Pick a cutoff so we keep roughly the brightest 20% of sampled pixels.
-      const keep = Math.max(1, Math.floor(samples * 0.2));
-      let cum = 0;
-      let cutoff = 255;
-      for (let v = 255; v >= 0; v--) {
-        cum += hist[v];
-        if (cum >= keep) {
-          cutoff = v;
-          break;
+      // Strip above the text box
+      const aboveY = Math.max(0, by - stripH - 1);
+      const sw = Math.min(bw, cw - bx);
+      if (sw > 0 && aboveY >= 0) {
+        const strip = ctx.getImageData(bx, aboveY, sw, Math.min(stripH, ch - aboveY));
+        for (let i = 0; i < strip.data.length; i += 4) {
+          const lum = strip.data[i] * 0.299 + strip.data[i+1] * 0.587 + strip.data[i+2] * 0.114;
+          if (lum > 100) samplePoints.push([strip.data[i], strip.data[i+1], strip.data[i+2]]);
         }
       }
-
-      let r = 0, g = 0, b = 0, c = 0;
-      for (let i = 0; i < data.length; i += stride) {
-        const rr = data[i];
-        const gg = data[i + 1];
-        const bb = data[i + 2];
-        const lum = Math.round((rr + gg + bb) / 3);
-        if (lum >= cutoff) {
-          r += rr;
-          g += gg;
-          b += bb;
-          c++;
+      // Strip below the text box
+      const bh = Math.max(1, Math.floor(rectPx.height * dpr));
+      const belowY = Math.min(ch - stripH, by + bh + 1);
+      if (sw > 0 && belowY > 0 && belowY < ch) {
+        const strip = ctx.getImageData(bx, belowY, sw, Math.min(stripH, ch - belowY));
+        for (let i = 0; i < strip.data.length; i += 4) {
+          const lum = strip.data[i] * 0.299 + strip.data[i+1] * 0.587 + strip.data[i+2] * 0.114;
+          if (lum > 100) samplePoints.push([strip.data[i], strip.data[i+1], strip.data[i+2]]);
         }
       }
-
-      // Fallback: if something weird happens (e.g. solid dark area), use overall average.
-      if (!c) {
-        let rr = 0, gg = 0, bb = 0, cc = 0;
-        for (let i = 0; i < data.length; i += stride) {
-          rr += data[i];
-          gg += data[i + 1];
-          bb += data[i + 2];
-          cc++;
-        }
-        if (!cc) return null;
-        return `rgba(${Math.round(rr / cc)}, ${Math.round(gg / cc)}, ${Math.round(bb / cc)}, 1)`;
-      }
-
-      return `rgba(${Math.round(r / c)}, ${Math.round(g / c)}, ${Math.round(b / c)}, 1)`;
     } catch (e) {
-      // getImageData can throw if canvas is tainted or out-of-bounds in some browsers.
       return null;
     }
+
+    const color = dominantColor(samplePoints);
+    if (!color) return null;
+    return `rgba(${color.r}, ${color.g}, ${color.b}, 1)`;
   }, []);
 
   // Live-apply dirty importerad text till servern och ladda om PDF i preview.
@@ -873,8 +884,11 @@ export default function App() {
             originalRect: tb.originalRect || tb.rect,
             pageIndex: tb.pageIndex ?? 0,
             fontFamily: tb.fontFamily || 'Helvetica',
+            fontWeight: tb.fontWeight || 'normal',
             fontSizePt: tb.fontSizePt || 12,
             color: tb.color || '#000000',
+            maskColor: tb.maskColor || null,
+            maskMaxBottomPt: tb.maskMaxBottomPt ?? null,
           },
         ])
       );
@@ -897,19 +911,16 @@ export default function App() {
         replacements: dirty.map(({ idx }) => {
           const s = snapshotByIndex.get(idx);
           const bboxRect = rectToPdfPoints(s.originalRect || s.rect);
-          console.log('[DEBUG] Sending to server:', {
-            originalRect: s.originalRect,
-            rect: s.rect,
-            bboxRect,
-            pageIndex: s.pageIndex
-          });
           return {
             page: (s.pageIndex ?? 0) + 1,
             bbox: bboxRect,
             text: s.text || '',
-            font: s.fontFamily || 'Helvetica',
+            font: s.fontWeight === 'bold' ? 'Helvetica-Bold' : (s.fontFamily || 'Helvetica'),
             size: Math.max(1, toPdfPoints(s.fontSizePt || 12)),
             color: s.color || '#000000',
+            bgColor: s.maskColor || null,
+            // Ramlinje uppmätt strax under texten — whiteout får inte nå ner i den.
+            maskBottom: s.maskMaxBottomPt != null ? toPdfPoints(s.maskMaxBottomPt) : null,
           };
         }),
       };
@@ -943,15 +954,11 @@ export default function App() {
       }
 
       const outBuf = await resp.arrayBuffer();
-      console.log('[DEBUG] Server response size:', outBuf.byteLength, 'bytes');
-
       // Ladda om med PDF.js (använd två kopior för att undvika detached ArrayBuffer)
       const stateBytes = new Uint8Array(outBuf).slice();
       const pdfJsBytes = new Uint8Array(outBuf).slice();
       const loadingTask = pdfjsLib.getDocument({ data: pdfJsBytes });
       const newDoc = await loadingTask.promise;
-      console.log('[DEBUG] Loaded new PDF doc with', newDoc.numPages, 'pages');
-
       // Om en nyare apply startats, ignorera denna (best effort)
       if (nonce !== textServerApplyNonceRef.current) return;
 
@@ -961,7 +968,6 @@ export default function App() {
       const savedScrollLeft = container?.scrollLeft || 0;
       const keepPage = currentPageRef.current || currentPage;
 
-      console.log('[DEBUG] Setting new pdfData and pdfDoc, saved scroll:', savedScrollTop);
       // Suppress page updates from scroll during PDF reload to prevent page jump
       suppressPageFromScrollRef.current = true;
       setPdfData(stateBytes.buffer.slice(0));
@@ -985,17 +991,16 @@ export default function App() {
       currentPageRef.current = nextPage;
       setCurrentPage(nextPage);
 
-      // IMPORTANT: For OCR PDFs, don't clear isDirty/maskColor!
-      // OCR PDFs have a scanned IMAGE underneath the invisible text layer.
-      // We can remove the text layer, but the image persists. The mask
-      // must remain visible to cover the original text in the image.
-      // So we only update originalRect but keep isDirty=true and maskColor.
+      // After server successfully applies text changes, the PDF now contains the
+      // new text (with a background rect covering the original). When PDF.js re-renders
+      // the canvas, it shows the correct result. Clear isDirty so the text box goes
+      // back to ghost mode (transparent textarea, canvas shows through) — no mask needed.
       setTextBoxes((prev) => {
         return (prev || []).map((tb, idx) => {
           const snap = snapshotByIndex.get(idx);
           if (!snap) return tb;
 
-          // Rör inte om användaren redan ändrat vidare sedan snapshot
+          // Don't touch if the user has already edited further since snapshot
           const sameText = (tb?.text || '') === (snap.text || '');
           const sameRect = tb?.rect && snap.rect
             ? tb.rect.x === snap.rect.x &&
@@ -1006,10 +1011,11 @@ export default function App() {
 
           if (!tb?.isImported || !tb?.isDirty || !sameText || !sameRect) return tb;
 
-          // Keep isDirty and maskColor to maintain the mask over scanned image background
+          // Clear isDirty so mask disappears — the server-rendered PDF already has the correct text.
+          // Keep maskColor in case the user edits again later.
           return {
             ...tb,
-            // Keep isDirty: true and maskColor so mask stays visible
+            isDirty: false,
             originalRect: tb.rect,
           };
         });
@@ -1085,6 +1091,46 @@ export default function App() {
         const page = await doc.getPage(pageNum);
         const viewport = page.getViewport({ scale: 1 });
         const textContent = await page.getTextContent();
+        const styles = textContent.styles || {};
+
+        // Helper: detect bold/italic from PDF.js font name, style info, and internal font objects
+        // Note: OCR'd/scanned PDFs use GlyphLessFont — no bold/italic info available for those
+        const detectFontStyle = (fontName) => {
+          const style = styles[fontName] || {};
+          let nameLower = ((fontName || '') + ' ' + (style.fontFamily || '')).toLowerCase();
+
+          // Try to get richer font info from PDF.js internal font objects
+          let flagBold = false;
+          let flagItalic = false;
+          try {
+            const objSources = [page.commonObjs, page.objs].filter(Boolean);
+            for (const objs of objSources) {
+              try {
+                if (objs.has && objs.has(fontName)) {
+                  const fontObj = objs.get(fontName);
+                  if (fontObj) {
+                    if (fontObj.bold) flagBold = true;
+                    if (fontObj.italic) flagItalic = true;
+                    nameLower += ' ' + (fontObj.name || fontObj.loadedName || '').toLowerCase();
+                    break;
+                  }
+                }
+              } catch (innerErr) { /* skip */ }
+            }
+          } catch (e) { /* ignore */ }
+
+          // Vikt-nyckelord i fontnamnet är den pålitligaste signalen. PDF.js egen
+          // `bold`-flagga härleds också ur basfontens namn, så den räknas hit.
+          const isBold = /bold|black|heavy/.test(nameLower) || flagBold;
+          const isItalic = /italic|oblique/.test(nameLower) || flagItalic;
+
+          return {
+            fontWeight: isBold ? 'bold' : 'normal',
+            fontStyle: isItalic ? 'italic' : 'normal',
+            // Namnet beskriver vikten explicit -> pixel-heuristiken behövs inte för sidan.
+            nameSaysBold: isBold
+          };
+        };
 
         // Step 1: Collect all text items with their computed positions
         const items = [];
@@ -1096,7 +1142,9 @@ export default function App() {
           const widthPx = (item.width || 0) * viewport.scale;
           const heightPx = fontHeightPx || 12;
 
-          if (!item.str || widthPx <= 0 || heightPx <= 0) continue;
+          if (!item.str || !item.str.trim() || widthPx <= 0 || heightPx <= 0) continue;
+
+          const fontInfo = detectFontStyle(item.fontName);
 
           // Baseline adjustment
           const baselineAdjustPx = heightPx * 0.18;
@@ -1107,9 +1155,17 @@ export default function App() {
             width: widthPx,
             height: heightPx,
             baselineY: y, // raw baseline position for merging comparison
-            fontHeightPx
+            fontHeightPx,
+            fontName: item.fontName || '',
+            nameSaysBold: fontInfo.nameSaysBold,
+            fontWeight: fontInfo.fontWeight,
+            fontStyle: fontInfo.fontStyle
           });
         }
+
+        // Om någon font på sidan har vikten i namnet (t.ex. "Arial-BoldMT") är
+        // fontnamnen tillförlitliga — då ska pixel-heuristiken inte gissa om vikten.
+        const pageWeightFromFontName = items.some(it => it.nameSaysBold);
 
         // Step 2: Sort items by Y (top to bottom), then X (left to right)
         items.sort((a, b) => {
@@ -1132,7 +1188,10 @@ export default function App() {
               width: item.width,
               height: item.height,
               baselineY: item.baselineY,
-              fontHeightPx: item.fontHeightPx
+              fontHeightPx: item.fontHeightPx,
+              fontWeight: item.fontWeight,
+              fontStyle: item.fontStyle,
+              subItems: [{ x: item.x, y: item.y, width: item.width, height: item.height, text: item.text, fontName: item.fontName }]
             };
             continue;
           }
@@ -1143,9 +1202,9 @@ export default function App() {
           const gap = item.x - (currentLine.x + currentLine.width);
 
           // Only merge truly adjacent text (words in a sentence).
-          // For tabular/columnar data, keep separate boxes to preserve layout.
-          // 1.5em is roughly the width of 1-2 spaces.
-          const maxGap = currentLine.fontHeightPx * 1.5;
+          // Keep gap small to avoid merging tabular/columnar data.
+          // ~0.5em ≈ roughly one normal word space.
+          const maxGap = currentLine.fontHeightPx * 0.5;
 
           if (sameBaseline && sameHeight && gap >= -5 && gap < maxGap) {
             // Merge: extend the current line
@@ -1162,6 +1221,10 @@ export default function App() {
             currentLine.width = (item.x + item.width) - currentLine.x;
             // Update height to max of both
             currentLine.height = Math.max(currentLine.height, item.height);
+            // Preserve bold/italic if any fragment on the line has it
+            if (item.fontWeight === 'bold') currentLine.fontWeight = 'bold';
+            if (item.fontStyle === 'italic') currentLine.fontStyle = 'italic';
+            currentLine.subItems.push({ x: item.x, y: item.y, width: item.width, height: item.height, text: item.text, fontName: item.fontName });
           } else {
             // Start a new line
             lines.push(currentLine);
@@ -1172,7 +1235,10 @@ export default function App() {
               width: item.width,
               height: item.height,
               baselineY: item.baselineY,
-              fontHeightPx: item.fontHeightPx
+              fontHeightPx: item.fontHeightPx,
+              fontWeight: item.fontWeight,
+              fontStyle: item.fontStyle,
+              subItems: [{ x: item.x, y: item.y, width: item.width, height: item.height, text: item.text, fontName: item.fontName }]
             };
           }
         }
@@ -1201,12 +1267,14 @@ export default function App() {
             fontSizePt,
             fontFamily: 'Helvetica',
             color: '#000000',
-            fontWeight: 'normal',
-            fontStyle: 'normal',
+            fontWeight: line.fontWeight || 'normal',
+            fontStyle: line.fontStyle || 'normal',
             rotation: 0,
             pageIndex: pageNum - 1,
             isImported: true,
-            isDirty: false
+            isDirty: false,
+            _subItems: line.subItems, // Keep sub-item positions for canvas bold detection
+            _weightFromFontName: pageWeightFromFontName
           });
         }
       } catch (err) {
@@ -1215,6 +1283,327 @@ export default function App() {
     }
 
     return imported;
+  }, []);
+
+  // Detect bold text by analyzing pixel density on the rendered canvas.
+  // Compares ink density of each sub-item against the page median to find bold text.
+  const detectBoldFromCanvasForPage = useCallback((canvas, pageIndex, dpr) => {
+    if (!canvas) return;
+    try {
+      const ctx = canvas.getContext('2d');
+      const cw = canvas.width;
+      const ch = canvas.height;
+
+      setTextBoxes(prev => {
+        const pageBoxes = prev.filter(tb => tb.isImported && tb.pageIndex === pageIndex && !tb.isDirty && tb._subItems);
+        console.log('[BoldDetect] pageIndex:', pageIndex, 'boxes with _subItems:', pageBoxes.length, 'total boxes on page:', prev.filter(tb => tb.pageIndex === pageIndex).length);
+        if (pageBoxes.length === 0) return prev;
+
+        // Collect density for every sub-item across all boxes on this page
+        const allDensities = [];
+        // boxSubDensities: boxIndex -> [{si, density}, ...] for each sub-item
+        const boxSubDensities = new Map();
+        // boxBgColors: boxIndex -> sampled background color string
+        const boxBgColors = new Map();
+        // boxMaskBottoms: boxIndex -> lägsta y (pt, uppifrån) masken får nå
+        const boxMaskBottoms = new Map();
+
+        // Helper: sample background color around a text box region
+        const sampleBgColor = (tbRect) => {
+          const bx = Math.max(0, Math.floor(tbRect.x * dpr));
+          const by = Math.max(0, Math.floor(tbRect.y * dpr));
+          const bw = Math.ceil(tbRect.width * dpr);
+          const bh = Math.ceil(tbRect.height * dpr);
+          // Strimlor över och under texten. De måste vara några pixlar höga: en
+          // ramlinje som råkar ligga i strimlan får inte utgöra merparten av
+          // underlaget, för då blir dess antialiasade kant den dominerande färgen.
+          const samplePoints = [];
+          const stripH = Math.max(3, Math.round(3 * dpr));
+          // Above
+          const aboveY = Math.max(0, by - stripH - 1);
+          if (aboveY >= 0 && bw > 0) {
+            try {
+              const strip = ctx.getImageData(bx, aboveY, Math.min(bw, cw - bx), stripH);
+              for (let i = 0; i < strip.data.length; i += 4) {
+                const lum = strip.data[i] * 0.299 + strip.data[i+1] * 0.587 + strip.data[i+2] * 0.114;
+                if (lum > 128) samplePoints.push([strip.data[i], strip.data[i+1], strip.data[i+2]]);
+              }
+            } catch(e) {}
+          }
+          // Below
+          const belowY = Math.min(ch - stripH, by + bh + 1);
+          if (belowY < ch && bw > 0) {
+            try {
+              const strip = ctx.getImageData(bx, belowY, Math.min(bw, cw - bx), stripH);
+              for (let i = 0; i < strip.data.length; i += 4) {
+                const lum = strip.data[i] * 0.299 + strip.data[i+1] * 0.587 + strip.data[i+2] * 0.114;
+                if (lum > 128) samplePoints.push([strip.data[i], strip.data[i+1], strip.data[i+2]]);
+              }
+            } catch(e) {}
+          }
+          const color = dominantColor(samplePoints);
+          if (!color) return null;
+          return `rgb(${color.r},${color.g},${color.b})`;
+        };
+
+        // Helper: leta upp en vågrät linje (cellram, understrykning) strax under
+        // texten. Masken som täcker originaltexten får inte nå ner i den, annars
+        // suddas ramen bort när texten byts ut. Bokstäver täcker aldrig hela
+        // bredden — en rad som är mörk tvärs över hela textrutan är en linje.
+        // Returnerar linjens överkant i samma skala som tbRect (pt), eller null.
+        const findRuleBelowText = (tbRect) => {
+          const bx = Math.max(0, Math.floor(tbRect.x * dpr));
+          const bw = Math.min(Math.ceil(tbRect.width * dpr), cw - bx);
+          // Sök från strax under baslinjen (0.82×höjden) till en bit under boxen.
+          const from = Math.max(0, Math.floor((tbRect.y + tbRect.height * 0.87) * dpr));
+          const to = Math.min(ch, Math.ceil((tbRect.y + tbRect.height * 1.4) * dpr));
+          const rows = to - from;
+          if (bw <= 2 || rows <= 0) return null;
+
+          let data;
+          try {
+            data = ctx.getImageData(bx, from, bw, rows).data;
+          } catch (e) { return null; }
+
+          for (let row = 0; row < rows; row++) {
+            let dark = 0;
+            for (let col = 0; col < bw; col++) {
+              const i = (row * bw + col) * 4;
+              const lum = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+              if (lum < 160 && data[i + 3] > 50) dark++;
+            }
+            if (dark >= bw * 0.9) return (from + row) / dpr;
+          }
+          return null;
+        };
+
+        for (const tb of pageBoxes) {
+          const subDensities = [];
+          for (const si of tb._subItems) {
+            const sx = Math.max(0, Math.floor(si.x * dpr));
+            const sy = Math.max(0, Math.floor(si.y * dpr));
+            const sw = Math.min(cw - sx, Math.ceil(si.width * dpr));
+            const sh = Math.min(ch - sy, Math.ceil(si.height * dpr));
+            if (sw <= 0 || sh <= 0) continue;
+
+            try {
+              const imageData = ctx.getImageData(sx, sy, sw, sh);
+              const data = imageData.data;
+              let darkPixels = 0;
+              const totalPixels = sw * sh;
+              for (let i = 0; i < data.length; i += 4) {
+                const lum = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+                if (lum < 128 && data[i + 3] > 50) darkPixels++;
+              }
+              const density = totalPixels > 0 ? darkPixels / totalPixels : 0;
+              if (density > 0.02) {
+                allDensities.push(density);
+                subDensities.push({ si, density, fontName: si.fontName || '' });
+              }
+            } catch (e) { /* skip */ }
+          }
+          const idx = prev.indexOf(tb);
+          if (idx >= 0) {
+            if (subDensities.length > 0) boxSubDensities.set(idx, subDensities);
+            // Sample background color for this text box
+            const rect = tb.originalRect || tb.rect;
+            const bgColor = sampleBgColor(rect);
+            if (bgColor) boxBgColors.set(idx, bgColor);
+
+            // Ligger det en ramlinje strax under texten: begränsa maskens underkant
+            // till strax ovanför den.
+            const ruleTop = findRuleBelowText(rect);
+            if (ruleTop != null) {
+              const limit = ruleTop - 0.5 / dpr;
+              // Masken måste ändå nå ner till baslinjen för att täcka texten.
+              if (limit > rect.y + rect.height * 0.82) boxMaskBottoms.set(idx, limit);
+            }
+          }
+        }
+
+        console.log('[BoldDetect] allDensities:', allDensities.length);
+
+        // Helper: lägg på samplad bakgrundsfärg och maskens underkantsgräns.
+        const applyBoxFixes = (boxes) => {
+          if (boxBgColors.size === 0 && boxMaskBottoms.size === 0) return boxes;
+          const out = [...boxes];
+          let anyChange = false;
+          for (const idx of new Set([...boxBgColors.keys(), ...boxMaskBottoms.keys()])) {
+            if (!out[idx]) continue;
+            const color = boxBgColors.get(idx);
+            const maskBottom = boxMaskBottoms.get(idx);
+            out[idx] = {
+              ...out[idx],
+              ...(color ? { maskColor: color } : {}),
+              ...(maskBottom != null ? { maskMaxBottomPt: maskBottom } : {})
+            };
+            anyChange = true;
+          }
+          return anyChange ? out : boxes;
+        };
+
+        // Alla vidare steg utgår från de korrigerade rutorna.
+        const base = applyBoxFixes(prev);
+
+        if (allDensities.length < 2) return base;
+
+        // Anger fontnamnen vikten explicit (t.ex. "Arial-BoldMT") är de facit —
+        // då ska pixelanalysen inte gissa och riskera att göra vanlig text fet.
+        if (pageBoxes.some(tb => tb._weightFromFontName)) {
+          console.log('[BoldDetect] Fontnamnen anger vikten — hoppar över pixelanalys.');
+          return base;
+        }
+
+        // Fet stil är en egenskap hos *fonten*, inte hos enskilda ord. Därför
+        // aggregeras densiteten per font-resurs innan något klassas som fet.
+        // Klassas varje ord för sig blir de tätaste orden i en helt omarkerad
+        // text (t.ex. "mm" vs "il") felaktigt feta.
+        const fontStats = new Map(); // fontName -> { sum, count }
+        for (const subDensities of boxSubDensities.values()) {
+          for (const sd of subDensities) {
+            // Korta fragment ger för brusig densitet för att ingå i statistiken.
+            if ((sd.si.text || '').replace(/\s/g, '').length < 3) continue;
+            const st = fontStats.get(sd.fontName) || { sum: 0, count: 0 };
+            st.sum += sd.density;
+            st.count++;
+            fontStats.set(sd.fontName, st);
+          }
+        }
+
+        // Bara en font med underlag på sidan => det finns inget fetare alternativ.
+        const fontMeans = [...fontStats.entries()]
+          .filter(([, st]) => st.count >= 3)
+          .map(([name, st]) => ({ name, mean: st.sum / st.count }))
+          .sort((a, b) => a.mean - b.mean);
+        console.log('[BoldDetect] fontMeans:',
+          fontMeans.map(f => `${f.name}:${f.mean.toFixed(3)}(${fontStats.get(f.name).count})`).join(' '));
+        if (fontMeans.length < 2) return base;
+
+        // Största relativa hoppet mellan intilliggande medelvärden delar fonterna
+        // i "normal" och "fet".
+        let splitAt = -1;
+        let bestGap = 0;
+        for (let i = 0; i < fontMeans.length - 1; i++) {
+          const gap = (fontMeans[i + 1].mean - fontMeans[i].mean) / fontMeans[i].mean;
+          if (gap > bestGap) { bestGap = gap; splitAt = i; }
+        }
+        // Helvetica Bold har ~25–40 % mer bläck än Regular. Under 20 % handlar det
+        // sannolikt om olika teckensnitt eller storlek — inte om olika vikt.
+        console.log('[BoldDetect] bestGap:', (bestGap * 100).toFixed(1) + '%');
+        if (splitAt < 0 || bestGap < 0.20) return base;
+
+        const boldFonts = new Set(fontMeans.slice(splitAt + 1).map(f => f.name));
+        const isBoldSub = (si) => boldFonts.has(si.fontName || '');
+
+        // Apply bold per-sub-item. If a box has mixed bold/non-bold, split it.
+        let changed = false;
+        const next = [...base];
+        const toInsert = []; // {afterIdx, newBoxes[]}
+
+        for (const [idx, subDensities] of boxSubDensities) {
+          const tb = next[idx];
+          // Classify each sub-item
+          const boldSubs = subDensities.filter(sd => isBoldSub(sd.si));
+          const normalSubs = subDensities.filter(sd => !isBoldSub(sd.si));
+
+          // Apply sampled background color
+          const bgColor = boxBgColors.get(idx);
+
+          if (boldSubs.length > 0 && normalSubs.length === 0) {
+            // All bold
+            if (tb.fontWeight !== 'bold' || bgColor) {
+              console.log('[BoldDetect] All-bold:', tb.text?.substring(0, 30));
+              next[idx] = { ...tb, fontWeight: 'bold', ...(bgColor ? { maskColor: bgColor } : {}) };
+              changed = true;
+            }
+          } else if (boldSubs.length === 0 && normalSubs.length > 0) {
+            // All normal — apply bgColor if available
+            if (bgColor) {
+              next[idx] = { ...tb, ...(bgColor ? { maskColor: bgColor } : {}) };
+              changed = true;
+            }
+          } else if (boldSubs.length > 0 && normalSubs.length > 0) {
+            // Mixed! Split the text box into bold and normal parts.
+            // Group consecutive sub-items by bold status, preserving order.
+            const allSubs = tb._subItems.map(si => ({ si, isBold: isBoldSub(si) }));
+
+            // Build groups of consecutive same-bold sub-items
+            const groups = [];
+            let currentGroup = null;
+            for (const item of allSubs) {
+              if (!item.si.text || !item.si.text.trim()) {
+                // Whitespace sub-item: attach to current group
+                if (currentGroup) currentGroup.items.push(item.si);
+                continue;
+              }
+              if (!currentGroup || currentGroup.isBold !== item.isBold) {
+                if (currentGroup) groups.push(currentGroup);
+                currentGroup = { isBold: item.isBold, items: [item.si] };
+              } else {
+                currentGroup.items.push(item.si);
+              }
+            }
+            if (currentGroup) groups.push(currentGroup);
+
+            if (groups.length > 1) {
+              console.log('[BoldDetect] Splitting mixed box:', tb.text?.substring(0, 40),
+                'into', groups.length, 'parts:', groups.map(g => `${g.isBold ? 'BOLD' : 'normal'}:"${g.items.map(i => i.text).join('')}"`));
+
+              // Create new text boxes for each group
+              const newBoxes = groups.map(group => {
+                // Use only non-whitespace items for bounding box calculation
+                const textItems = group.items.filter(si => si.text && si.text.trim());
+                const firstSi = textItems[0] || group.items[0];
+                const lastSi = textItems[textItems.length - 1] || group.items[group.items.length - 1];
+                const groupText = group.items.map(si => si.text).join('');
+                const groupX = firstSi.x;
+                const groupY = Math.min(...group.items.map(si => si.y));
+                const groupWidth = (lastSi.x + lastSi.width) - firstSi.x;
+                const groupHeight = Math.max(...group.items.map(si => si.height));
+                const rectPx = { x: groupX, y: groupY, width: groupWidth, height: groupHeight };
+                // rectPxToPt with scale 1 is identity
+                return {
+                  ...tb,
+                  text: groupText,
+                  rect: { ...rectPx },
+                  originalRect: { ...rectPx },
+                  fontWeight: group.isBold ? 'bold' : 'normal',
+                  _subItems: group.items,
+                  ...(bgColor ? { maskColor: bgColor } : {})
+                };
+              });
+
+              // Mark the original for replacement
+              next[idx] = null; // Will be filtered out
+              toInsert.push({ afterIdx: idx, newBoxes });
+              changed = true;
+            } else {
+              // Only one group after processing
+              const weight = groups[0]?.isBold ? 'bold' : 'normal';
+              if (tb.fontWeight !== weight) {
+                next[idx] = { ...tb, fontWeight: weight };
+                changed = true;
+              }
+            }
+          }
+        }
+
+        // Insert split boxes and remove nulls
+        if (toInsert.length > 0) {
+          // Process in reverse order so indices don't shift
+          toInsert.sort((a, b) => b.afterIdx - a.afterIdx);
+          for (const { afterIdx, newBoxes } of toInsert) {
+            next.splice(afterIdx, 1, ...newBoxes);
+          }
+        }
+
+        const result = next.filter(Boolean);
+        console.log('[BoldDetect] changed:', changed, 'boxes:', prev.length, '->', result.length);
+        return changed ? result : base;
+      });
+    } catch (e) {
+      // Ignore detection errors silently
+    }
   }, []);
 
   const canvasRefs = useRef({}); // Objekt med pageNum som nyckel och canvas-ref som värde
@@ -1849,7 +2238,8 @@ export default function App() {
       });
       renderTasksRef.current = {};
 
-      const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
+      // Use at least 2x resolution for sharp text, higher on HiDPI screens
+      const dpr = typeof window !== 'undefined' ? Math.max(2, window.devicePixelRatio || 1) : 2;
 
       for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
         try {
@@ -1888,8 +2278,11 @@ export default function App() {
               renderTasksRef.current[pageNum] = renderTask;
 
               renderTask.promise.then(() => {
-                if (!isCancelled) {
-                  // console.log(`Page ${pageNum} rendered`);
+                // After render: detect bold from canvas pixels for imported text
+                if (!isCancelled && canvas) {
+                  try {
+                    detectBoldFromCanvasForPage(canvas, pageNum - 1, zoom * dpr);
+                  } catch (e) { /* ignore detection errors */ }
                 }
                 // Ta bort task från ref när den är klar
                 if (renderTasksRef.current[pageNum] === renderTask) {
@@ -2200,19 +2593,20 @@ export default function App() {
   }, [showPageLayoutMenu]);
 
   const handleFileUpload = async (file) => {
-    if (!file || file.type !== 'application/pdf') {
-      error(t('errors.selectPdfFile', 'Vänligen välj en PDF-fil'));
+    const isImage = file && (file.type === 'image/png' || file.type === 'image/jpeg' || file.type === 'image/jpg');
+    const isPdf = file && file.type === 'application/pdf';
+
+    if (!file || (!isPdf && !isImage)) {
+      error(t('errors.selectPdfFile', 'Vänligen välj en PDF- eller bildfil'));
       return;
     }
 
     setIsLoading(true);
     setUploadProgress(0);
-    // Extract filename without extension
-    const nameWithoutExt = file.name.replace(/\.pdf$/i, '');
+    const nameWithoutExt = file.name.replace(/\.(pdf|png|jpe?g)$/i, '');
     setPdfFileName(nameWithoutExt || 'Untitled');
     setLoadingMessage(t('upload.uploading', 'Your file is uploading'));
 
-    // Start smooth progress animation (0 to 100 over 3 seconds)
     const duration = 3000;
     const startTime = Date.now();
     const progressInterval = setInterval(() => {
@@ -2225,56 +2619,122 @@ export default function App() {
     }, 50);
 
     try {
-      // Load PDF in background while animation runs
-      const data = await loadPDF(file);
+      if (isImage) {
+        // === IMAGE PATH: Load image, convert to single-page PDF, run OCR ===
+        const dataUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
 
-      // Viktigt: PDF.js kan "detacha" ArrayBuffer när den skickas till worker.
-      // Därför: spara en kopia i state, och ge PDF.js en ANNAN kopia.
-      const stateBytes = new Uint8Array(data).slice();
-      const pdfJsBytes = new Uint8Array(data).slice();
-      setPdfData(stateBytes.buffer.slice(0)); // Spara kopia av original PDF data
+        // Load image to get dimensions
+        const img = await new Promise((resolve, reject) => {
+          const i = new Image();
+          i.onload = () => resolve(i);
+          i.onerror = reject;
+          i.src = dataUrl;
+        });
 
-      setLoadingMessage(t('upload.uploading', 'Your file is uploading'));
-      const loadingTask = pdfjsLib.getDocument({ data: pdfJsBytes });
-      const doc = await loadingTask.promise;
+        const imgW = img.naturalWidth;
+        const imgH = img.naturalHeight;
 
-      // Load Outline
-      doc.getOutline().then(outline => {
-        setPdfOutline(outline || []);
-      }).catch(err => console.log('Outline fetch error', err));
+        // Create a single-page PDF with the image embedded (for the existing rendering pipeline)
+        setLoadingMessage('Skapar PDF från bild...');
+        const pdfDocLib = await PDFDocument.create();
+        const page = pdfDocLib.addPage([imgW, imgH]);
 
-      const importedTextBoxes = await importExistingPdfText(doc);
-      setPdfDoc(doc);
-      setCurrentPage(1);
-      setPdfPages([]);
-      setPageViewports([]);
-      canvasRefs.current = {};
-      pageContainerRefs.current = {};
-      setTextBoxes(importedTextBoxes);
-      setWhiteoutBoxes([]);
-      setPatchBoxes([]);
-      setShapeBoxes([]);
-      setCommentBoxes([]);
+        // Embed image
+        let embeddedImg;
+        if (file.type === 'image/png') {
+          const imgBytes = await file.arrayBuffer();
+          embeddedImg = await pdfDocLib.embedPng(imgBytes);
+        } else {
+          const imgBytes = await file.arrayBuffer();
+          embeddedImg = await pdfDocLib.embedJpg(imgBytes);
+        }
+        page.drawImage(embeddedImg, { x: 0, y: 0, width: imgW, height: imgH });
 
-      // Detect if PDF needs OCR (no text or incomplete text coverage)
-      // Show banner if: no text, OR average text per page is low (< 50 chars/page)
-      const totalChars = importedTextBoxes.reduce((sum, tb) => sum + (tb.text || '').trim().length, 0);
-      const avgCharsPerPage = doc.numPages > 0 ? totalChars / doc.numPages : 0;
-      const hasFullTextCoverage = avgCharsPerPage >= 50; // Threshold: at least 50 chars per page
-      setShowOcrBanner(!hasFullTextCoverage && doc.numPages > 0);
+        const pdfBytes = await pdfDocLib.save();
+        const stateBytes = new Uint8Array(pdfBytes).slice();
+        const pdfJsBytes = new Uint8Array(pdfBytes).slice();
+        setPdfData(stateBytes.buffer.slice(0));
 
-      // History initieras i useEffect när pdfDoc sätts
-      success(t('success.pdfLoaded', 'PDF laddad framgångsrikt'));
+        const loadingTask = pdfjsLib.getDocument({ data: pdfJsBytes });
+        const doc = await loadingTask.promise;
 
-      // Wait for animation to complete (remaining time from 3 seconds)
+        setPdfDoc(doc);
+        setCurrentPage(1);
+        setPdfPages([]);
+        setPageViewports([]);
+        canvasRefs.current = {};
+        pageContainerRefs.current = {};
+        setPdfOutline([]);
+        setWhiteoutBoxes([]);
+        setPatchBoxes([]);
+        setShapeBoxes([]);
+        setCommentBoxes([]);
+
+        // Run OCR to extract text with positions and font info
+        setLoadingMessage('Läser text från bild (OCR)...');
+        try {
+          const ocrTextBoxes = await ocrImage(dataUrl, imgW, imgH, (progress) => {
+            setLoadingMessage(`Läser text från bild (OCR)... ${progress}%`);
+          });
+          setTextBoxes(ocrTextBoxes);
+          setShowOcrBanner(false);
+          success(`Bild laddad — ${ocrTextBoxes.length} textrader hittades`);
+        } catch (ocrErr) {
+          console.error('OCR failed:', ocrErr);
+          setTextBoxes([]);
+          setShowOcrBanner(true);
+          success('Bild laddad (OCR misslyckades — du kan lägga till text manuellt)');
+        }
+      } else {
+        // === PDF PATH (existing code) ===
+        const data = await loadPDF(file);
+
+        const stateBytes = new Uint8Array(data).slice();
+        const pdfJsBytes = new Uint8Array(data).slice();
+        setPdfData(stateBytes.buffer.slice(0));
+
+        setLoadingMessage(t('upload.uploading', 'Your file is uploading'));
+        const loadingTask = pdfjsLib.getDocument({ data: pdfJsBytes });
+        const doc = await loadingTask.promise;
+
+        doc.getOutline().then(outline => {
+          setPdfOutline(outline || []);
+        }).catch(err => console.log('Outline fetch error', err));
+
+        const importedTextBoxes = await importExistingPdfText(doc);
+        setPdfDoc(doc);
+        setCurrentPage(1);
+        setPdfPages([]);
+        setPageViewports([]);
+        canvasRefs.current = {};
+        pageContainerRefs.current = {};
+        setTextBoxes(importedTextBoxes);
+        setWhiteoutBoxes([]);
+        setPatchBoxes([]);
+        setShapeBoxes([]);
+        setCommentBoxes([]);
+
+        const totalChars = importedTextBoxes.reduce((sum, tb) => sum + (tb.text || '').trim().length, 0);
+        const avgCharsPerPage = doc.numPages > 0 ? totalChars / doc.numPages : 0;
+        const hasFullTextCoverage = avgCharsPerPage >= 50;
+        setShowOcrBanner(!hasFullTextCoverage && doc.numPages > 0);
+
+        success(t('success.pdfLoaded', 'PDF laddad framgångsrikt'));
+      }
+
       const elapsed = Date.now() - startTime;
       const remaining = Math.max(0, duration - elapsed);
       await new Promise(resolve => setTimeout(resolve, remaining));
       clearInterval(progressInterval);
     } catch (err) {
       clearInterval(progressInterval);
-      console.error('Fel vid laddning av PDF:', err);
-      error(t('errors.loadFailed', 'Kunde inte ladda PDF-filen') + ': ' + err.message);
+      console.error('Fel vid laddning:', err);
+      error(t('errors.loadFailed', 'Kunde inte ladda filen') + ': ' + err.message);
     } finally {
       setIsLoading(false);
       setLoadingMessage('');
@@ -5286,10 +5746,10 @@ export default function App() {
           setHistoryIndex(-1);
         }}>
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="24" height="24" rx="4" fill="#ff6b35" />
+            <rect width="24" height="24" rx="4" fill="#b8860b" />
             <path d="M6 7h8l4 4v8a1 1 0 01-1 1H7a1 1 0 01-1-1V7z" fill="#fff" />
-            <path d="M14 7v4h4" fill="none" stroke="#ff6b35" strokeWidth="1.5" />
-            <text x="8" y="16" fontSize="5" fontWeight="bold" fill="#ff6b35">PDF</text>
+            <path d="M14 7v4h4" fill="none" stroke="#b8860b" strokeWidth="1.5" />
+            <text x="8" y="16" fontSize="5" fontWeight="bold" fill="#b8860b">PDF</text>
           </svg>
           <span style={{
             fontSize: '18px',
@@ -5297,7 +5757,7 @@ export default function App() {
             color: 'var(--text-primary)',
             letterSpacing: '-0.5px'
           }}>
-            PDF<span style={{ color: '#ff6b35' }}>Moment</span>
+            PDF<span style={{ color: '#b8860b' }}>Moment</span>
           </span>
         </div>
 
@@ -5354,7 +5814,7 @@ export default function App() {
               className="app-zoom-slider"
               style={{
                 width: '100px',
-                background: `linear-gradient(to right, #ff6b35 0%, #ff6b35 ${((zoom - 0.5) / (5 - 0.5)) * 100}%, #444 ${((zoom - 0.5) / (5 - 0.5)) * 100}%, #444 100%)`
+                background: `linear-gradient(to right, #b8860b 0%, #b8860b ${((zoom - 0.5) / (5 - 0.5)) * 100}%, #444 ${((zoom - 0.5) / (5 - 0.5)) * 100}%, #444 100%)`
               }}
             />
             <span style={{ minWidth: '45px', textAlign: 'right', fontWeight: '500', color: 'var(--text-primary)' }}>{Math.round(zoom * 100)}%</span>
@@ -6132,7 +6592,7 @@ export default function App() {
                                 height: '32px',
                                 backgroundColor: colorOption.color,
                                 border: textSettings.color.toLowerCase() === colorOption.color.toLowerCase()
-                                  ? '3px solid #ff6b35'
+                                  ? '3px solid #b8860b'
                                   : '2px solid var(--border-color)',
                                 borderRadius: '5px',
                                 cursor: 'pointer',
@@ -6206,9 +6666,9 @@ export default function App() {
                       }}
                       style={{
                         padding: '6px 12px',
-                        backgroundColor: textSettings.fontWeight === 'bold' ? '#ff6b35' : 'var(--bg-card)',
+                        backgroundColor: textSettings.fontWeight === 'bold' ? '#b8860b' : 'var(--bg-card)',
                         color: textSettings.fontWeight === 'bold' ? '#fff' : 'var(--text-primary)',
-                        border: textSettings.fontWeight === 'bold' ? '1px solid #ff6b35' : '1px solid var(--border-color)',
+                        border: textSettings.fontWeight === 'bold' ? '1px solid #b8860b' : '1px solid var(--border-color)',
                         borderRadius: '5px',
                         cursor: 'pointer',
                         fontWeight: 'bold',
@@ -6226,9 +6686,9 @@ export default function App() {
                       }}
                       style={{
                         padding: '6px 12px',
-                        backgroundColor: textSettings.fontStyle === 'italic' ? '#ff6b35' : 'var(--bg-card)',
+                        backgroundColor: textSettings.fontStyle === 'italic' ? '#b8860b' : 'var(--bg-card)',
                         color: textSettings.fontStyle === 'italic' ? '#fff' : 'var(--text-primary)',
-                        border: textSettings.fontStyle === 'italic' ? '1px solid #ff6b35' : '1px solid var(--border-color)',
+                        border: textSettings.fontStyle === 'italic' ? '1px solid #b8860b' : '1px solid var(--border-color)',
                         borderRadius: '5px',
                         cursor: 'pointer',
                         fontStyle: 'italic',
@@ -6470,7 +6930,7 @@ export default function App() {
                                 height: '32px',
                                 backgroundColor: colorOption.color,
                                 border: commentSettings.backgroundColor.toLowerCase() === colorOption.color.toLowerCase()
-                                  ? '3px solid #ff6b35'
+                                  ? '3px solid #b8860b'
                                   : '2px solid #555',
                                 borderRadius: '5px',
                                 cursor: 'pointer',
@@ -6591,8 +7051,8 @@ export default function App() {
                         style={{
                           width: '35px',
                           height: '35px',
-                          backgroundColor: commentSettings.icon === item.type ? '#ff6b35' : 'var(--bg-card)',
-                          border: commentSettings.icon === item.type ? '2px solid #ff6b35' : '1px solid var(--border-color)',
+                          backgroundColor: commentSettings.icon === item.type ? '#b8860b' : 'var(--bg-card)',
+                          border: commentSettings.icon === item.type ? '2px solid #b8860b' : '1px solid var(--border-color)',
                           borderRadius: '5px',
                           cursor: 'pointer',
                           display: 'flex',
@@ -6733,9 +7193,9 @@ export default function App() {
                     onClick={() => setHighlightMode('rect')}
                     style={{
                       padding: '8px 12px',
-                      backgroundColor: highlightMode === 'rect' ? '#ff6b35' : 'var(--bg-card)',
+                      backgroundColor: highlightMode === 'rect' ? '#b8860b' : 'var(--bg-card)',
                       color: highlightMode === 'rect' ? '#fff' : 'var(--text-primary)',
-                      border: highlightMode === 'rect' ? '1px solid #ff6b35' : '1px solid var(--border-color)',
+                      border: highlightMode === 'rect' ? '1px solid #b8860b' : '1px solid var(--border-color)',
                       borderRadius: '6px',
                       cursor: 'pointer',
                       transition: 'all 0.2s ease'
@@ -6747,9 +7207,9 @@ export default function App() {
                     onClick={() => setHighlightMode('freehand')}
                     style={{
                       padding: '8px 12px',
-                      backgroundColor: highlightMode === 'freehand' ? '#ff6b35' : 'var(--bg-card)',
+                      backgroundColor: highlightMode === 'freehand' ? '#b8860b' : 'var(--bg-card)',
                       color: highlightMode === 'freehand' ? '#fff' : 'var(--text-primary)',
-                      border: highlightMode === 'freehand' ? '1px solid #ff6b35' : '1px solid var(--border-color)',
+                      border: highlightMode === 'freehand' ? '1px solid #b8860b' : '1px solid var(--border-color)',
                       borderRadius: '6px',
                       cursor: 'pointer',
                       transition: 'all 0.2s ease'
@@ -6790,7 +7250,7 @@ export default function App() {
                     step="0.05"
                     value={highlightSettings.opacity}
                     onChange={(e) => setHighlightSettings({ ...highlightSettings, opacity: parseFloat(e.target.value) })}
-                    style={{ accentColor: '#ff6b35' }}
+                    style={{ accentColor: '#b8860b' }}
                   />
                   <span style={{ color: 'var(--text-primary)', minWidth: '38px', textAlign: 'right' }}>{Math.round((highlightSettings.opacity || 0.35) * 100)}%</span>
                 </div>
@@ -7001,7 +7461,7 @@ export default function App() {
                                 height: '32px',
                                 backgroundColor: colorOption.color,
                                 border: whiteoutColor.toLowerCase() === colorOption.color.toLowerCase()
-                                  ? '3px solid #ff6b35'
+                                  ? '3px solid #b8860b'
                                   : '2px solid var(--border-color)',
                                 borderRadius: '5px',
                                 cursor: 'pointer',
@@ -7263,7 +7723,7 @@ export default function App() {
                                 height: '32px',
                                 backgroundColor: colorOption.color,
                                 border: shapeSettings.strokeColor.toLowerCase() === colorOption.color.toLowerCase()
-                                  ? '3px solid #ff6b35'
+                                  ? '3px solid #b8860b'
                                   : '2px solid var(--border-color)',
                                 borderRadius: '5px',
                                 cursor: 'pointer',
@@ -7391,7 +7851,7 @@ export default function App() {
                                 backgroundSize: '10px 10px',
                                 backgroundPosition: '0 0, 0 5px, 5px -5px, -5px 0px',
                                 border: shapeSettings.fillColor === 'transparent'
-                                  ? '3px solid #ff6b35'
+                                  ? '3px solid #b8860b'
                                   : '2px solid var(--border-color)',
                                 borderRadius: '5px',
                                 cursor: 'pointer',
@@ -7427,7 +7887,7 @@ export default function App() {
                                   height: '32px',
                                   backgroundColor: colorOption.color,
                                   border: (shapeSettings.fillColor || 'transparent').toLowerCase() === colorOption.color.toLowerCase()
-                                    ? '3px solid #ff6b35'
+                                    ? '3px solid #b8860b'
                                     : '2px solid var(--border-color)',
                                   borderRadius: '5px',
                                   cursor: 'pointer',

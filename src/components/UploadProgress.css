@@ -63,15 +63,15 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 4px 20px rgba(255, 107, 53, 0.15);
+    box-shadow: 0 4px 20px rgba(184, 134, 11, 0.15);
 }
 
 .uploadProgressIcon {
     width: 48px;
     height: 48px;
-    color: #ff6b35;
+    color: #b8860b;
     stroke-width: 1.5px;
-    filter: drop-shadow(0 4px 6px rgba(255, 107, 53, 0.2));
+    filter: drop-shadow(0 4px 6px rgba(184, 134, 11, 0.2));
     animation: float 2s ease-in-out infinite;
 }
 
@@ -100,7 +100,7 @@
 }
 
 .uploadProgressPercent {
-    color: #ff6b35;
+    color: #b8860b;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
 }
@@ -120,9 +120,9 @@
 /* We use a different structure for the pill shape bar in the image */
 .uploadProgressBarFill {
     height: 100%;
-    background: #ff6b35;
+    background: #b8860b;
     /* Fallback */
-    background: linear-gradient(90deg, #ff6b35 0%, #ff4f19 100%);
+    background: linear-gradient(90deg, #b8860b 0%, #ff4f19 100%);
     border-radius: 99px;
     transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     position: relative;
@@ -147,7 +147,7 @@
     width: 24px;
     /* Slightly larger thumb */
     height: 24px;
-    background: #ff6b35;
+    background: #b8860b;
     border-radius: 50%;
     box-shadow: 0 0 0 4px #ffffff, 0 4px 12px rgba(0, 0, 0, 0.15);
     /* Thicker white ring and better shadow */

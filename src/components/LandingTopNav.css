@@ -39,9 +39,9 @@
   border-radius: 10px;
   display: grid;
   place-items: center;
-  color: #111;
+  color: #0b1a10;
   background: var(--brand-gradient);
-  box-shadow: 0 10px 26px rgba(255, 107, 53, 0.18);
+  box-shadow: 0 10px 26px rgba(184, 134, 11, 0.25);
 }
 
 .landingBrandText {
@@ -229,7 +229,7 @@
   margin-left: 6px;
   padding: 2px 5px;
   border-radius: 4px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #b8860b 0%, #8b6914 100%);
   color: #fff;
   font-weight: 700;
   text-transform: uppercase;

@@ -184,8 +184,8 @@ export default function FloatingControlBar({
         onClick={onPanToolToggle}
         style={{
           background: panToolActive ? 'rgba(255, 107, 53, 0.2)' : 'transparent',
-          border: panToolActive ? '1px solid #ff6b35' : 'none',
-          color: panToolActive ? '#ff6b35' : '#d0d0d0',
+          border: panToolActive ? '1px solid #b8860b' : 'none',
+          color: panToolActive ? '#b8860b' : '#d0d0d0',
           cursor: 'pointer',
           fontSize: '18px',
           padding: '6px 10px',

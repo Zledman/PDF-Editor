@@ -31,9 +31,10 @@ export async function exportAsPDF(pdfData, textBoxes, whiteoutBoxes, patchBoxes,
       page: (tb.pageIndex ?? 0) + 1,
       bbox: rectToPdfPoints(tb.originalRect ?? tb.rect),
       text: tb.text || '',
-      font: tb.fontFamily || 'Helvetica',
+      font: tb.fontWeight === 'bold' ? 'Helvetica-Bold' : (tb.fontFamily || 'Helvetica'),
       size: Math.max(1, toPdfPoints(tb.fontSizePt || 12)),
       color: tb.color || '#000000',
+      bgColor: tb.maskColor || null,
     })),
   };
 
@@ -129,14 +130,30 @@ export async function exportAsPNG(pdfDoc, textBoxes, whiteoutBoxes, patchBoxes, 
       }
     }
 
-    // Rita text-boxes
-    const pageTextBoxes = textBoxes.filter(tb =>
-      tb.pageIndex === undefined || tb.pageIndex === pageNum - 1
-    );
+    // Rita text-boxes (filtrera bort oredigerade importerade textboxar)
+    const pageTextBoxes = textBoxes
+      .filter(tb => tb.pageIndex === undefined || tb.pageIndex === pageNum - 1)
+      .filter(tb => !(tb.isImported && !tb.isDirty));
     for (const textBox of pageTextBoxes) {
       if (textBox.text) {
         const scale = 2.0;
         const fontSize = (textBox.fontSizePt || 12) * scale;
+
+        // Maska bort originaltext för ändrade importerade textboxar
+        if (textBox.isImported && textBox.isDirty) {
+          const maskRect = textBox.originalRect || textBox.rect;
+          const maskExtendTop = fontSize * 0.2;
+          const maskExtendBottom = fontSize * 0.05;
+          const maskExtendSide = fontSize * 0.1;
+          context.fillStyle = textBox.maskColor || '#ffffff';
+          context.fillRect(
+            maskRect.x * scale - maskExtendSide,
+            maskRect.y * scale - maskExtendTop,
+            maskRect.width * scale + 2 * maskExtendSide,
+            maskRect.height * scale + maskExtendTop + maskExtendBottom
+          );
+        }
+
         const x = textBox.rect.x * scale;
         const y = textBox.rect.y * scale + fontSize * 0.8; // Baseline offset
 

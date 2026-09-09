@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import LandingTopNav from './LandingTopNav';
 import './LandingPage.css';
@@ -8,10 +8,25 @@ export default function LandingPage({ onFileSelect, onCreateNew, onOpenTool, ena
   const fileInputRef = useRef(null);
   const uploadCardRef = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [openFaq, setOpenFaq] = useState(null);
+
+  const toggleFaq = useCallback((index) => {
+    setOpenFaq((prev) => (prev === index ? null : index));
+  }, []);
+
+  // Force dark theme on landing page
+  useEffect(() => {
+    const prev = document.body.getAttribute('data-theme');
+    document.body.setAttribute('data-theme', 'dark');
+    return () => {
+      if (prev) document.body.setAttribute('data-theme', prev);
+    };
+  }, []);
 
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
-    if (file && file.type === 'application/pdf') {
+    const supportedTypes = ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg'];
+    if (file && supportedTypes.includes(file.type)) {
       onFileSelect(file);
     } else {
       alert(t('landingPage.selectPdfFile'));
@@ -33,7 +48,8 @@ export default function LandingPage({ onFileSelect, onCreateNew, onOpenTool, ena
     setIsDragging(false);
 
     const file = e.dataTransfer.files?.[0];
-    if (file && file.type === 'application/pdf') {
+    const supportedTypes = ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg'];
+    if (file && supportedTypes.includes(file.type)) {
       onFileSelect(file);
     } else {
       alert(t('landingPage.dropPdfFile'));
@@ -134,7 +150,7 @@ export default function LandingPage({ onFileSelect, onCreateNew, onOpenTool, ena
                 name="pdf-file"
                 ref={fileInputRef}
                 type="file"
-                accept=".pdf"
+                accept=".pdf,.png,.jpg,.jpeg"
                 onChange={handleFileChange}
                 style={{ display: 'none' }}
               />
@@ -170,65 +186,89 @@ export default function LandingPage({ onFileSelect, onCreateNew, onOpenTool, ena
         <section className="landingHowItWorks">
           <h2 className="landingSectionTitle">{t('howItWorks.title')}</h2>
 
-          <div className="landingHowItWorksVisual">
-            <div className="landingFlowStep">
-              <div className="landingFlowIconBg">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+          <div className="landingStepsCards">
+            <div className="landingStepCard">
+              <div className="landingStepCardNumber">1</div>
+              <div className="landingStepCardIcon">
+                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="17 8 12 3 7 8" />
+                  <line x1="12" y1="3" x2="12" y2="15" />
                 </svg>
               </div>
+              <h3 className="landingStepCardTitle">{t('howItWorks.steps.1.title')}</h3>
+              <p className="landingStepCardDesc">{t('howItWorks.steps.1.description')}</p>
             </div>
 
-            <div className="landingFlowArrow">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <div className="landingStepCardArrow" aria-hidden="true">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="5" y1="12" x2="19" y2="12" />
                 <polyline points="12 5 19 12 12 19" />
               </svg>
             </div>
 
-            <div className="landingFlowStep landingFlowCentral">
-              <div className="landingFlowIconBg">
-                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-                  <line x1="8" y1="21" x2="16" y2="21" />
-                  <line x1="12" y1="17" x2="12" y2="21" />
+            <div className="landingStepCard landingStepCardHighlight">
+              <div className="landingStepCardNumber">2</div>
+              <div className="landingStepCardIcon">
+                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 20h9" />
+                  <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
                 </svg>
-                <div className="landingFlowFloatingIcon">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 20h9" />
-                    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-                  </svg>
-                </div>
               </div>
+              <h3 className="landingStepCardTitle">{t('howItWorks.steps.2.title')}</h3>
+              <p className="landingStepCardDesc">{t('howItWorks.steps.2.description')}</p>
             </div>
 
-            <div className="landingFlowArrow">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <div className="landingStepCardArrow" aria-hidden="true">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="5" y1="12" x2="19" y2="12" />
                 <polyline points="12 5 19 12 12 19" />
               </svg>
             </div>
 
-            <div className="landingFlowStep">
-              <div className="landingFlowIconBg isSuccess">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <div className="landingStepCard">
+              <div className="landingStepCardNumber">3</div>
+              <div className="landingStepCardIcon landingStepCardIconSuccess">
+                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                   <polyline points="14 2 14 8 20 8" />
-                  <line x1="12" y1="18" x2="12" y2="12" />
-                  <line x1="9" y1="15" x2="12" y2="12" />
-                  <line x1="15" y1="15" x2="12" y2="12" />
+                  <polyline points="16 13 12 17 8 13" />
                 </svg>
               </div>
+              <h3 className="landingStepCardTitle">{t('howItWorks.steps.3.title')}</h3>
+              <p className="landingStepCardDesc">{t('howItWorks.steps.3.description')}</p>
             </div>
           </div>
+        </section>
 
-          <div className="landingStepsRow">
-            {[1, 2, 3].map((step) => (
-              <div className="landingStepItem" key={step}>
-                <span className="landingStepNumber">{step}</span>
-                <div className="landingStepContent">
-                  <h3 className="landingStepTitle">{t(`howItWorks.steps.${step}.title`)}</h3>
-                  <p className="landingStepDesc">{t(`howItWorks.steps.${step}.description`)}</p>
+        <section className="landingFaq">
+          <h2 className="landingSectionTitle">{t('faq.title')}</h2>
+          <div className="landingFaqList">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div className={`landingFaqItem ${openFaq === i ? 'isOpen' : ''}`} key={i}>
+                <button
+                  type="button"
+                  className="landingFaqQuestion"
+                  onClick={() => toggleFaq(i)}
+                  aria-expanded={openFaq === i}
+                >
+                  <span>{t(`faq.items.${i}.question`)}</span>
+                  <svg
+                    className="landingFaqChevron"
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </button>
+                <div className="landingFaqAnswer">
+                  <p>{t(`faq.items.${i}.answer`)}</p>
                 </div>
               </div>
             ))}

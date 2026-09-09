@@ -14,7 +14,7 @@
     appearance: none;
     width: 18px;
     height: 18px;
-    background: #ff6b35;
+    background: #b8860b;
     /* Orange thumb */
     border-radius: 50%;
     cursor: pointer;
@@ -29,7 +29,7 @@
 }
 
 .app-zoom-slider:hover::-webkit-slider-thumb {
-    background: #ff8c42;
+    background: #d4a017;
     /* Lighter orange on hover */
 }
 
@@ -37,7 +37,7 @@
 .app-zoom-slider::-moz-range-thumb {
     width: 18px;
     height: 18px;
-    background: #ff6b35;
+    background: #b8860b;
     border-radius: 50%;
     cursor: pointer;
     border: 2px solid #2a2a2a;

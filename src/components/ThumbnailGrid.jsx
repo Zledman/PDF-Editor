@@ -135,7 +135,7 @@ export default function ThumbnailGrid({
                             backgroundColor: '#fff',
                             borderRadius: '4px',
                             boxShadow: isSelected ? '0 0 0 4px rgba(255, 107, 53, 0.4)' : '0 2px 5px rgba(0,0,0,0.1)',
-                            border: isSelected ? '2px solid #ff6b35' : '1px solid #e0e0e0',
+                            border: isSelected ? '2px solid #b8860b' : '1px solid #e0e0e0',
                             overflow: 'hidden',
                             position: 'relative',
                             transition: 'all 0.2s',
@@ -170,7 +170,7 @@ export default function ThumbnailGrid({
                         {/* Page Number Label */}
                         <div style={{
                             marginTop: '10px',
-                            backgroundColor: isSelected ? '#ff6b35' : '#6c757d',
+                            backgroundColor: isSelected ? '#b8860b' : '#6c757d',
                             color: '#fff',
                             borderRadius: '12px',
                             padding: '2px 10px',

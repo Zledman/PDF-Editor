@@ -12,6 +12,10 @@ public class ReplaceRequest {
     public String font;
     public float size;
     public String color; // "#RRGGBB"
+    public String bgColor; // "rgb(r,g,b)" or "#RRGGBB" — background color for whiteout rect
+    // Y (top-left-system, samma som bbox) för en ramlinje strax under texten.
+    // Whiteout-rektangeln får inte nå nedanför denna. null = ingen linje uppmätt.
+    public Float maskBottom;
   }
 
   public static class BBox {

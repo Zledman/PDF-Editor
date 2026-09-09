@@ -189,7 +189,7 @@ export default function ThumbnailSidebar({ pdfDoc, currentPage, onPageSelect, zo
                   height: `${displayHeight}px`,
                   cursor: 'pointer',
                   // Orange border for active state
-                  border: isActive ? '3px solid #ff6b35' : '1px solid #e0e0e0',
+                  border: isActive ? '3px solid #b8860b' : '1px solid #e0e0e0',
                   borderRadius: '4px',
                   overflow: 'hidden',
                   backgroundColor: '#fff',
@@ -227,7 +227,7 @@ export default function ThumbnailSidebar({ pdfDoc, currentPage, onPageSelect, zo
                 style={{
                   marginTop: '6px',
                   color: '#fff',
-                  backgroundColor: isActive ? '#ff6b35' : '#757575',
+                  backgroundColor: isActive ? '#b8860b' : '#757575',
                   padding: '2px 8px',
                   borderRadius: '10px',
                   fontSize: '12px',
@@ -269,7 +269,7 @@ export default function ThumbnailSidebar({ pdfDoc, currentPage, onPageSelect, zo
             width: '4px',
             height: '32px',
             borderRadius: '2px',
-            backgroundColor: isHandleHovered || isResizing ? '#ff6b35' : '#bbb', // Neutral grey -> Orange on interaction
+            backgroundColor: isHandleHovered || isResizing ? '#b8860b' : '#bbb', // Neutral grey -> Orange on interaction
             transition: 'background-color 0.2s ease',
             boxShadow: isHandleHovered || isResizing ? '0 0 4px rgba(255, 107, 53, 0.4)' : 'none'
           }}

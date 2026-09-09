@@ -522,6 +522,9 @@
     "copied": "Element kopierat",
     "pasted": "{{count}} element klistrade in"
   },
+  "info": {
+    "fontStyleWarning": "Dokumentets originalfonter kan inte användas för redigering. Ändrad text kommer använda ett standardtypsnitt (Helvetica)."
+  },
   "downloadModal": {
     "title": "Bra jobbat!",
     "subtitle": "Välj ett filformat för att ladda ner din fil",
@@ -647,6 +650,31 @@
       "3": {
         "title": "Ladda ner",
         "description": "Spara ditt färdiga PDF-ögonblick och dela det direkt."
+      }
+    }
+  },
+  "faq": {
+    "title": "Vanliga frågor",
+    "items": {
+      "1": {
+        "question": "Är PDFMoment gratis att använda?",
+        "answer": "Ja, PDFMoment är helt gratis under Early Access. Du kan redigera, skapa och exportera PDF-filer utan kostnad."
+      },
+      "2": {
+        "question": "Laddas mina filer upp till någon server?",
+        "answer": "Nej, alla PDF-filer bearbetas lokalt i din webbläsare. Dina dokument lämnar aldrig din enhet."
+      },
+      "3": {
+        "question": "Vilka filformat stöds?",
+        "answer": "Du kan öppna och redigera PDF-filer. Export sker som PDF, men vi arbetar på stöd för fler format som PNG och JPG."
+      },
+      "4": {
+        "question": "Finns det en gräns för filstorlek?",
+        "answer": "Eftersom allt körs i webbläsaren beror prestandan på din enhet. De flesta PDF-filer upp till 100 MB fungerar utan problem."
+      },
+      "5": {
+        "question": "Kan jag använda PDFMoment på mobilen?",
+        "answer": "PDFMoment är optimerat för desktop-webbläsare, men grundläggande funktioner fungerar även på surfplattor och mobiler."
       }
     }
   }

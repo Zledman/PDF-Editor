@@ -155,7 +155,7 @@ export default function ImageSidebar({
                         width: '120px',
                         height: '6px',
                         cursor: 'pointer',
-                        accentColor: 'var(--accent-color, #ff6b35)'
+                        accentColor: 'var(--accent-color, #b8860b)'
                     }}
                     title={t('imageSidebar.opacityTooltip', 'Justera bildens genomskinlighet')}
                 />

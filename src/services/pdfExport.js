@@ -234,28 +234,35 @@ export async function exportPDF(pdfData, textBoxes = [], whiteoutBoxes = [], pat
       // Om texten kommer från importerad PDF och har ändrats, maska bort originaltexten under
       if (textBox.isImported && textBox.isDirty) {
         const maskRect = textBox.originalRect || rect;
-        const maskPadTop = 0.1; // Minimal toppmarginal
-        const maskPadBottom = 0.3; // Minimal bottenmarginal för att inte ta linjen
-        const maskHeight = Math.max(1, maskRect.height - maskPadTop - maskPadBottom);
-        page.drawRectangle({
-          x: maskRect.x,
-          y: height - (maskRect.y + maskPadTop) - maskHeight,
-          width: maskRect.width,
-          height: maskHeight,
-          color: rgb(1, 1, 1),
-          opacity: 1
-        });
+        // Minimal padding: lite extra uppåt för ascenders, minimal nedåt för att inte täcka nästa rad
+        const padX = fontSizePt * 0.1;
+        const padTop = fontSizePt * 0.2;
+        const padBot = fontSizePt * 0.05;
+        const maskRgb = textBox.maskColor ? parseMaskColor(textBox.maskColor) : rgb(1, 1, 1);
+        const { y: maskY, height: maskH } = clampMaskBottom(
+          height - maskRect.y - maskRect.height - padBot,
+          maskRect.height + padTop + padBot,
+          textBox.maskMaxBottomPt,
+          height
+        );
+        if (maskH > 0) {
+          page.drawRectangle({
+            x: maskRect.x - padX,
+            y: maskY,
+            width: maskRect.width + 2 * padX,
+            height: maskH,
+            color: maskRgb,
+            opacity: 1
+          });
+        }
       }
 
-      // Bädda in font om det behövs
+      // Bädda in font om det behövs (use bold variant when fontWeight is bold)
+      const isBold = textBox.fontWeight === 'bold';
+      const fontName = isBold ? 'Helvetica-Bold' : 'Helvetica';
       let font;
       try {
-        if (fontFamily === 'Helvetica' || fontFamily.includes('Helvetica')) {
-          font = await pdfDoc.embedFont('Helvetica');
-        } else {
-          // Försök använda standardfont
-          font = await pdfDoc.embedFont('Helvetica');
-        }
+        font = await pdfDoc.embedFont(fontName);
       } catch (error) {
         font = await pdfDoc.embedFont('Helvetica');
       }
@@ -373,7 +380,9 @@ async function exportPDFAsImages(pdfData, textBoxes = [], whiteoutBoxes = [], pa
     });
 
     // Filtrera element för denna sida
-    const pageTextBoxes = textBoxes.filter(tb => tb.pageIndex === undefined || tb.pageIndex === pageIndex);
+    const pageTextBoxes = textBoxes
+      .filter(tb => tb.pageIndex === undefined || tb.pageIndex === pageIndex)
+      .filter(tb => !(tb.isImported && !tb.isDirty));
     const pageWhiteoutBoxes = whiteoutBoxes.filter(wb => wb.pageIndex === undefined || wb.pageIndex === pageIndex);
     const pagePatchBoxes = patchBoxes.filter(pb => pb.pageIndex === undefined || pb.pageIndex === pageIndex);
     const pageHighlightRects = shapeBoxes.filter(sb => (sb.pageIndex === undefined || sb.pageIndex === pageIndex) && sb.type === 'highlight');
@@ -498,9 +507,38 @@ async function exportPDFAsImages(pdfData, textBoxes = [], whiteoutBoxes = [], pa
       const text = textBox.text || '';
       const color = textBox.color || '#000000';
 
+      // Maska bort originaltext för ändrade importerade textboxar
+      if (textBox.isImported && textBox.isDirty) {
+        const maskRect = textBox.originalRect || rect;
+        // Samma tajta marginaler som i vektor-exporten: en jämn padding runt hela
+        // rutan skulle sträcka sig långt under texten och sudda ramlinjer under den.
+        const padX = fontSizePt * 0.1;
+        const padTop = fontSizePt * 0.2;
+        const padBot = fontSizePt * 0.05;
+        const maskRgb = textBox.maskColor ? parseMaskColor(textBox.maskColor) : rgb(1, 1, 1);
+        const { y: maskY, height: maskH } = clampMaskBottom(
+          height - maskRect.y - maskRect.height - padBot,
+          maskRect.height + padTop + padBot,
+          textBox.maskMaxBottomPt,
+          height
+        );
+        if (maskH > 0) {
+          pdfPage.drawRectangle({
+            x: maskRect.x - padX,
+            y: maskY,
+            width: maskRect.width + 2 * padX,
+            height: maskH,
+            color: maskRgb,
+            opacity: 1
+          });
+        }
+      }
+
+      const isBold2 = textBox.fontWeight === 'bold';
+      const fontName2 = isBold2 ? 'Helvetica-Bold' : 'Helvetica';
       let font;
       try {
-        font = await newPdfDoc.embedFont('Helvetica');
+        font = await newPdfDoc.embedFont(fontName2);
       } catch (error) {
         font = await newPdfDoc.embedFont('Helvetica');
       }
@@ -570,5 +608,40 @@ function hexToRgb(hex) {
       parseInt(result[3], 16) / 255
     )
     : rgb(0, 0, 0);
+}
+
+/**
+ * Klipper av maskrektangelns underkant ovanför en uppmätt ramlinje, så att
+ * linjen inte suddas bort tillsammans med originaltexten.
+ *
+ * @param {number} y - rektangelns underkant i PDF-koordinater (y uppåt)
+ * @param {number} rectHeight - rektangelns höjd
+ * @param {number|undefined} maskMaxBottomPt - ramlinjens y uppifrån räknat, eller undefined
+ * @param {number} pageHeight - sidans höjd, för att vända koordinatsystemet
+ */
+function clampMaskBottom(y, rectHeight, maskMaxBottomPt, pageHeight) {
+  if (maskMaxBottomPt == null) return { y, height: rectHeight };
+  const limitY = pageHeight - maskMaxBottomPt;
+  if (limitY <= y) return { y, height: rectHeight };
+  return { y: limitY, height: rectHeight - (limitY - y) };
+}
+
+/**
+ * Konverterar maskColor (rgba/rgb-sträng) till pdf-lib rgb-objekt
+ */
+function parseMaskColor(maskColor) {
+  if (!maskColor) return rgb(1, 1, 1);
+  // Match rgba(r,g,b,a) or rgb(r,g,b)
+  const match = maskColor.match(/rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/);
+  if (match) {
+    return rgb(
+      parseFloat(match[1]) / 255,
+      parseFloat(match[2]) / 255,
+      parseFloat(match[3]) / 255
+    );
+  }
+  // Try hex
+  if (maskColor.startsWith('#')) return hexToRgb(maskColor);
+  return rgb(1, 1, 1);
 }
 

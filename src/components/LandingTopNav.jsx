@@ -1,15 +1,11 @@
 import { useTranslation } from 'react-i18next';
 import './LandingTopNav.css';
 import { ToolIcon } from './ToolIcons';
-import { useTheme } from '../contexts/ThemeContext';
-import ThemeToggle from './ThemeToggle';
 
 import LanguageSelector from './LanguageSelector';
 
 export default function LandingTopNav({ enabledTools = [], onToolSelect = null }) {
   const { t } = useTranslation();
-  const { theme, toggleTheme } = useTheme();
-
   const comingSoon = t('landingPage.comingSoon', 'Kommer snart');
   const enabledSet = new Set(enabledTools || []);
 
@@ -202,7 +198,6 @@ export default function LandingTopNav({ enabledTools = [], onToolSelect = null }
 
         <div className="landingNavRight">
           <LanguageSelector />
-          <ThemeToggle />
 
           <button
             type="button"

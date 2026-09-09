@@ -1,5 +1,6 @@
 package com.example.pdfserver.web;
 
+import org.apache.pdfbox.multipdf.PDFMergerUtility;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.rendering.PDFRenderer;
 import org.springframework.http.HttpHeaders;
@@ -127,17 +128,13 @@ public class OcrController {
                 // Single page, just copy
                 Files.copy(pagePdfs.get(0), combinedPdf);
             } else {
-                // Merge multiple pages using PDFBox
-                try (PDDocument merged = new PDDocument()) {
-                    for (Path pagePdf : pagePdfs) {
-                        try (PDDocument pageDoc = PDDocument.load(pagePdf.toFile())) {
-                            for (int i = 0; i < pageDoc.getNumberOfPages(); i++) {
-                                merged.addPage(pageDoc.getPage(i));
-                            }
-                        }
-                    }
-                    merged.save(combinedPdf.toFile());
+                // Merge multiple pages using PDFMergerUtility (avoids COSStream issues)
+                PDFMergerUtility merger = new PDFMergerUtility();
+                for (Path pagePdf : pagePdfs) {
+                    merger.addSource(pagePdf.toFile());
                 }
+                merger.setDestinationFileName(combinedPdf.toAbsolutePath().toString());
+                merger.mergeDocuments(null);
             }
 
             byte[] outBytes = Files.readAllBytes(combinedPdf);
