@@ -8301,7 +8301,9 @@ export default function App() {
                               display: 'block',
                               backgroundColor: 'white',
                               cursor:
-                                (tool === 'highlight' && highlightMode === 'freehand') || tool === 'eraser'
+                                tool === 'pan'
+                                  ? (isPanning ? 'grabbing' : 'grab')
+                                  : (tool === 'highlight' && highlightMode === 'freehand') || tool === 'eraser'
                                   ? 'none'
                                   : (tool === 'highlight' && highlightMode === 'rect')
                                     ? 'crosshair'
