@@ -284,6 +284,18 @@ export const ImportIcon = () => (
         <path d="M18 18l-2 2" />
     </svg>
 );
+export const ChevronUpIcon = () => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="18 15 12 9 6 15" />
+    </svg>
+);
+
+export const ChevronDownIcon = () => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="6 9 12 15 18 9" />
+    </svg>
+);
+
 export const ZoomInIcon = () => (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="11" cy="11" r="8" />

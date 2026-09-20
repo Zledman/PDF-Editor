@@ -1,0 +1,92 @@
+.floatingBar {
+    position: fixed;
+    bottom: 20px;
+    transform: translateX(-50%);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 12px 24px;
+    background-color: var(--floating-bg);
+    border: 1px solid var(--border-menu);
+    border-radius: 25px;
+    box-shadow: var(--floating-shadow);
+    backdrop-filter: blur(10px);
+    transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.floatingBar__group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.floatingBar__group--pages {
+    gap: 10px;
+}
+
+.floatingBar__label {
+    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.floatingBar__count {
+    min-width: 44px;
+    color: var(--text-primary);
+    font-size: 14px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
+.floatingBar__divider {
+    width: 1px;
+    height: 22px;
+    background-color: var(--border-menu);
+}
+
+.floatingBar__btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 10px;
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.floatingBar__btn svg {
+    width: 20px;
+    height: 20px;
+    stroke-width: 1.8;
+}
+
+.floatingBar__btn:hover:not(:disabled) {
+    background-color: var(--bg-card-hover);
+    color: var(--text-primary);
+}
+
+.floatingBar__btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.floatingBar__btn--chevron {
+    padding: 6px;
+}
+
+.floatingBar__btn--chevron svg {
+    width: 16px;
+    height: 16px;
+    stroke-width: 2;
+}
+
+.floatingBar__btn--active,
+.floatingBar__btn--active:hover:not(:disabled) {
+    background-color: var(--brand-glow);
+    box-shadow: inset 0 0 0 1px var(--border-hover);
+    color: var(--brand-text);
+}

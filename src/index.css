@@ -17,9 +17,13 @@
   --brand-primary: #b8860b;
   --brand-gradient: linear-gradient(135deg, #b8860b 0%, #d4a017 100%);
   --brand-glow: rgba(184, 134, 11, 0.15);
+  --brand-text: #b8860b; /* Guld som text/ikon på --brand-glow */
 
   --nav-bg: rgba(11, 26, 16, 0.85);
   --nav-border: rgba(184, 134, 11, 0.10);
+
+  --floating-bg: rgba(15, 34, 24, 0.92);
+  --floating-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 
   --modal-overlay: rgba(0, 0, 0, 0.75);
   --modal-bg: linear-gradient(145deg, #0f2218 0%, #071209 100%);
@@ -41,8 +45,13 @@
   --border-color: rgba(11, 26, 16, 0.18);
   --border-hover: rgba(168, 132, 40, 0.5);
 
+  --brand-text: #8a6508; /* Mörkare guld för kontrast mot ljus bakgrund */
+
   --nav-bg: rgba(250, 248, 242, 0.95);
   --nav-border: rgba(11, 26, 16, 0.12);
+
+  --floating-bg: rgba(250, 248, 242, 0.95);
+  --floating-shadow: 0 4px 16px rgba(11, 26, 16, 0.12);
 
   --modal-overlay: rgba(0, 0, 0, 0.5);
   --modal-bg: #faf8f2;
