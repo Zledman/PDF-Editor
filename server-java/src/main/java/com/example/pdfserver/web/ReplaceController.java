@@ -79,7 +79,11 @@ public class ReplaceController {
     }
   }
 
-  /** @return true om minst en text-operator faktiskt togs bort. */
+  /**
+   * @return true om minst en <em>synlig</em> text-operator togs bort. Osynlig text
+   *         (t.ex. OCR-lagret i en skannad PDF, Tr 3) räknas inte: där finns de
+   *         synliga tecknen kvar i bilden under, inklusive nedstaplar under baslinjen.
+   */
   private boolean removeTextInBBox(PDDocument doc, PDPage page, ReplaceRequest.Replacement rp) throws IOException {
     PDFStreamParser parser = new PDFStreamParser(page);
     parser.parse();
@@ -97,6 +101,9 @@ public class ReplaceController {
     // Graphics state (CTM)
     java.util.Stack<Matrix> graphicsStack = new java.util.Stack<>();
     Matrix ctm = new Matrix(); // Identity default
+    // Textrenderingsläge (Tr). Ingår i grafiktillståndet och sparas därför med q/Q.
+    int renderMode = 0;
+    java.util.Stack<Integer> renderModeStack = new java.util.Stack<>();
 
     for (Object tok : tokens) {
       if (tok instanceof COSBase) {
@@ -117,11 +124,21 @@ public class ReplaceController {
       switch (name) {
         case "q" -> {
           graphicsStack.push(ctm.clone());
+          renderModeStack.push(renderMode);
           flush(newTokens, args, op);
         }
         case "Q" -> {
           if (!graphicsStack.isEmpty()) {
             ctm = graphicsStack.pop();
+          }
+          if (!renderModeStack.isEmpty()) {
+            renderMode = renderModeStack.pop();
+          }
+          flush(newTokens, args, op);
+        }
+        case "Tr" -> {
+          if (args.size() >= 1 && args.get(0) instanceof COSNumber n) {
+            renderMode = n.intValue();
           }
           flush(newTokens, args, op);
         }
@@ -183,7 +200,7 @@ public class ReplaceController {
             flush(newTokens, args, op);
           } else {
             System.out.println("    REMOVING Tj: " + (str != null ? str.getString() : "null"));
-            removed = true;
+            if (isVisible(renderMode)) removed = true;
             args.clear(); // skip operand+op
           }
         }
@@ -198,7 +215,7 @@ public class ReplaceController {
             flush(newTokens, args, op);
           } else {
             System.out.println("    REMOVING TJ array");
-            removed = true;
+            if (isVisible(renderMode)) removed = true;
             args.clear();
           }
         }
@@ -240,7 +257,7 @@ public class ReplaceController {
     return removed;
   }
 
-  /** @return true om minst en text-operator togs bort ur XObject:et. */
+  /** @return true om minst en synlig text-operator togs bort ur XObject:et. */
   private boolean removeTextFromFormXObject(PDDocument doc, PDFormXObject formXObj, PDPage page,
       ReplaceRequest.Replacement rp, Matrix pageCTM) throws IOException {
     // Get XObject's transformation matrix (default is identity)
@@ -265,8 +282,11 @@ public class ReplaceController {
     java.util.Stack<Matrix> graphicsStack = new java.util.Stack<>();
     // Combine: XObject matrix × Page CTM
     Matrix ctm = xobjMatrix.multiply(pageCTM);
+    int renderMode = 0;
+    java.util.Stack<Integer> renderModeStack = new java.util.Stack<>();
 
     boolean modified = false;
+    boolean removedVisible = false;
 
     for (Object tok : tokens) {
       if (tok instanceof COSBase) {
@@ -285,11 +305,19 @@ public class ReplaceController {
       switch (name) {
         case "q" -> {
           graphicsStack.push(ctm.clone());
+          renderModeStack.push(renderMode);
           flush(newTokens, args, op);
         }
         case "Q" -> {
           if (!graphicsStack.isEmpty())
             ctm = graphicsStack.pop();
+          if (!renderModeStack.isEmpty())
+            renderMode = renderModeStack.pop();
+          flush(newTokens, args, op);
+        }
+        case "Tr" -> {
+          if (args.size() >= 1 && args.get(0) instanceof COSNumber n)
+            renderMode = n.intValue();
           flush(newTokens, args, op);
         }
         case "cm" -> {
@@ -338,6 +366,7 @@ public class ReplaceController {
           } else {
             System.out.println("    REMOVING Tj from XObject: " + (str != null ? str.getString() : ""));
             modified = true;
+            if (isVisible(renderMode)) removedVisible = true;
             args.clear();
           }
         }
@@ -348,6 +377,7 @@ public class ReplaceController {
           } else {
             System.out.println("    REMOVING TJ from XObject");
             modified = true;
+            if (isVisible(renderMode)) removedVisible = true;
             args.clear();
           }
         }
@@ -362,7 +392,12 @@ public class ReplaceController {
       }
       System.out.println("    XObject content stream updated");
     }
-    return modified;
+    return removedVisible;
+  }
+
+  /** Tr 3 (osynlig) och Tr 7 (bara klippning) ritar inget. */
+  private static boolean isVisible(int renderMode) {
+    return renderMode != 3 && renderMode != 7;
   }
 
   private static void flush(List<Object> out, List<COSBase> args, Operator op) {
